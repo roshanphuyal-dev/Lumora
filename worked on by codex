@@ -1,0 +1,59 @@
+Codex work summary
+
+Date: 2026-07-24
+
+What I changed
+
+1. Reconciled the backend/ai package boundary.
+- Added `ai/pyproject.toml` so `ai/` is a real Python package (`lumora-ai`).
+- Updated `backend/pyproject.toml` to depend on `lumora-ai` via an editable local path.
+- Removed the now-redundant direct `google-genai` dependency from `backend`; it is declared in `ai/pyproject.toml`.
+- Refreshed `backend/uv.lock`.
+
+2. Removed import-path hacks.
+- Deleted the `sys.path` workaround from `backend/app/workers/notebook_tasks.py`.
+- Removed the same style of hack from `backend/tests/test_orchestrator.py`.
+- Removed the same style of hack from `backend/tests/test_notebooklm_client.py`.
+- Verified `uv run python -c "import ai.orchestrator"` works from `backend/` without path hacks.
+
+3. Added missing regression tests for the new NotebookLM worker flow.
+- Added `backend/tests/test_notebook_tasks.py`.
+- Covered successful indexing:
+  - remote NotebookLM notebook id is persisted to `Notebook.notebooklm_notebook_id`
+  - document bytes are written to a temp file
+  - temp file is removed after indexing
+  - source is marked `indexed`
+- Covered failed indexing:
+  - temp file is still removed
+  - source is marked `failed`
+  - persisted remote notebook id remains saved if it was resolved before the failure
+
+4. Checked the main conflict-risk files from the handoff.
+- Confirmed `backend/app/workers/notebook_tasks.py` builds the current `DocumentIndexRequest` shape:
+  - `document_id`
+  - `notebooklm_notebook_id`
+  - `file_path`
+- Confirmed `backend/tests/test_orchestrator.py` matches that current schema.
+
+5. Synced docs for the real NotebookLM CLI and packaging cleanup.
+- Updated/verified:
+  - `docs/AI.md`
+  - `docs/DEPLOYMENT.md`
+  - `docs/DECISIONS.md`
+  - `CHANGELOG.md`
+
+6. Cleaned generated metadata noise.
+- Added `*.egg-info/` to `.gitignore`.
+- Removed generated `ai/lumora_ai.egg-info` files from the working tree.
+
+Verification run
+
+- `cd backend && uv run pytest` -> 80 passed
+- `cd backend && uv run ruff check . ../ai` -> passed
+- `cd backend && uv run ruff format --check . ../ai` -> passed
+- `cd backend && uv run python -c "import ai.orchestrator; print(ai.orchestrator.__file__)"` -> import succeeded
+
+Intentional non-work
+
+- Did not start frontend/dashboard scaffold work.
+- Did not try to fake live NotebookLM or Supabase smoke tests; those remain accepted unverified caveats.

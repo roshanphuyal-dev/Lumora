@@ -1,0 +1,11 @@
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.user import User
+
+
+async def update_profile(db: AsyncSession, user: User, full_name: str | None) -> User:
+    if full_name is not None:
+        user.full_name = full_name
+    await db.commit()
+    await db.refresh(user)
+    return user

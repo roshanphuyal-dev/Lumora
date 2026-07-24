@@ -34,3 +34,9 @@ Index of Architecture Decision Records (ADRs) and the process for writing one. I
 | [0007](adr/0007-rag.md) | Why RAG | Accepted |
 
 <!-- Add new rows here as ADRs are written. Keep this table the only content of substance in this file. -->
+
+## Known Debt (not yet ADR-worthy)
+
+Stopgaps introduced during implementation that are deliberate but temporary — tracked here so they aren't lost, promoted to a full ADR only if reversing them turns out to be contested:
+
+- **NotebookLM integration unverified against the live CLI**: `ai/notebooklm/client.py` now shells out to the real `nlm` CLI (`notebooklm-mcp-cli`) instead of a stub — see `docs/AI.md#routing-logic` and `docs/DEPLOYMENT.md` for the manual `nlm login` prerequisite. No `nlm` binary or authenticated profile has been available in any environment this was built/reviewed in, and the CLI's own docs don't pin down the exact `--json` response shape for `notebook create`/`source add`, so `_extract_id`'s key-name matching is defensive/best-effort rather than confirmed. Needs a live smoke-test the first time someone runs `nlm login` and indexes a real document; tighten `_extract_id` to the confirmed shape once that happens.

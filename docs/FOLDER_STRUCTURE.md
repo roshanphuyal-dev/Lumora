@@ -25,14 +25,44 @@ ai-tutor/
 ├── AGENTS.md
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
+├── .gitignore
 ├── docs/
 ├── .claude/
 ├── frontend/    (stub — see frontend/README.md)
-├── backend/     (stub — see backend/README.md)
+├── backend/     (auth, courses/subjects, documents, notebooks scaffolded — see below)
 ├── database/    (stub — see database/README.md)
-├── ai/          (stub — see ai/README.md)
+├── ai/          (orchestrator, Gemini + NotebookLM clients scaffolded — see below)
 ├── tests/       (stub — see tests/README.md)
-└── docker/      (stub — see docker/README.md)
+└── docker/      (docker-compose.yml — local Postgres + Redis)
+```
+
+`backend/` current contents (Milestone 1 — auth, users, courses/subjects; Milestone 2 — documents, notebooks, parsing, Celery):
+```
+backend/
+├── app/
+│   ├── api/v1/       # auth.py, users.py, courses.py, documents.py, notebooks.py
+│   ├── core/         # config.py, security.py, dependencies.py, storage.py (FileStorage seam)
+│   ├── db/           # session.py (async engine/session, Base)
+│   ├── models/       # base.py, user.py, course.py, document.py, notebook.py
+│   ├── schemas/      # auth.py, user.py, course.py, document.py, notebook.py
+│   ├── services/     # auth_service.py, user_service.py, course_service.py, document_service.py, notebook_service.py
+│   ├── parsers/      # base.py, registry.py, pdf/pptx/docx/image_parser.py
+│   ├── rag/          # empty — Milestone 3
+│   ├── workers/      # celery_app.py, document_tasks.py, notebook_tasks.py
+│   └── main.py
+├── alembic/           # env.py + versions/ (users/courses/subjects; documents/notebooks/notebook_sources)
+├── tests/             # conftest.py, test_auth.py, test_courses.py, test_document_service.py, test_document_tasks.py, test_parsers.py, test_storage.py
+├── .env.example
+└── pyproject.toml
+```
+
+`ai/` current contents (Milestone 2 — orchestrator + first two provider clients, `docs/AI.md#routing-logic`):
+```
+ai/
+├── orchestrator/      # task_types.py (TaskType enum), schemas.py, orchestrator.py (run_task)
+├── gemini/            # client.py — real google-genai call (Gemini 2.5 Flash)
+├── notebooklm/        # client.py — typed interface, CLI/MCP call still stubbed (always raises)
+└── prompts/           # teaching_explanation_v1.py
 ```
 
 ### Target (as modules are implemented)

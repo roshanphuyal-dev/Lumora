@@ -1,0 +1,242 @@
+from unittest.mock import patch
+
+from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.document import Document, DocumentParseStatus
+from app.models.notebook import NotebookSourceIndexStatus
+from app.models.user import User
+
+
+async def _register_and_login(client: AsyncClient, email: str) -> str:
+    await client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": "correct-horse-1", "full_name": "Test User"},
+    )
+    login = await client.post(
+        "/api/v1/auth/login", json={"email": email, "password": "correct-horse-1"}
+    )
+    return login.json()["access_token"]
+
+
+def _auth(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _user_id(db_session: AsyncSession, email: str) -> str:
+    user = await db_session.scalar(select(User).where(User.email == email))
+    assert user is not None
+    return str(user.id)
+
+
+async def _create_document(
+    db_session: AsyncSession,
+    uploaded_by: str,
+    *,
+    parse_status: DocumentParseStatus,
+    filename: str = "notes.pdf",
+) -> Document:
+    document = Document(
+        uploaded_by=uploaded_by,
+        filename=filename,
+        storage_path=filename,
+        mime_type="application/pdf",
+        file_type="pdf",
+        parse_status=parse_status,
+        extracted_text="parsed text" if parse_status == DocumentParseStatus.DONE else None,
+    )
+    db_session.add(document)
+    await db_session.commit()
+    await db_session.refresh(document)
+    return document
+
+
+async def test_create_and_list_notebooks(client: AsyncClient, unique_email: str) -> None:
+    token = await _register_and_login(client, unique_email)
+
+    resp = await client.post(
+        "/api/v1/notebooks", json={"name": "Biology 101"}, headers=_auth(token)
+    )
+    assert resp.status_code == 201
+
+    resp = await client.get("/api/v1/notebooks", headers=_auth(token))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 1
+    assert body["items"][0]["name"] == "Biology 101"
+
+
+async def test_notebooks_are_isolated_per_user(client: AsyncClient) -> None:
+    token_a = await _register_and_login(client, "nb-owner@example.com")
+    token_b = await _register_and_login(client, "nb-intruder@example.com")
+
+    await client.post(
+        "/api/v1/notebooks", json={"name": "Only A's notebook"}, headers=_auth(token_a)
+    )
+
+    resp = await client.get("/api/v1/notebooks", headers=_auth(token_b))
+    assert resp.json()["total"] == 0
+
+
+async def test_cannot_get_or_delete_another_users_notebook(client: AsyncClient) -> None:
+    token_a = await _register_and_login(client, "nbdel-owner@example.com")
+    token_b = await _register_and_login(client, "nbdel-intruder@example.com")
+
+    create = await client.post(
+        "/api/v1/notebooks", json={"name": "Owner's notebook"}, headers=_auth(token_a)
+    )
+    notebook_id = create.json()["id"]
+
+    get_resp = await client.get(f"/api/v1/notebooks/{notebook_id}", headers=_auth(token_b))
+    assert get_resp.status_code == 404
+
+    delete_resp = await client.delete(f"/api/v1/notebooks/{notebook_id}", headers=_auth(token_b))
+    assert delete_resp.status_code == 404
+
+
+async def test_attach_source_requires_parsed_document(
+    client: AsyncClient, db_session: AsyncSession, unique_email: str
+) -> None:
+    token = await _register_and_login(client, unique_email)
+    user_id = await _user_id(db_session, unique_email)
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "Chemistry"}, headers=_auth(token)
+    )
+    notebook_id = notebook.json()["id"]
+
+    pending_document = await _create_document(
+        db_session, user_id, parse_status=DocumentParseStatus.PENDING
+    )
+
+    with patch("app.api.v1.notebooks.index_notebook_source_task.delay") as mock_delay:
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/sources",
+            json={"document_id": str(pending_document.id)},
+            headers=_auth(token),
+        )
+
+    assert resp.status_code == 409
+    mock_delay.assert_not_called()
+
+
+async def test_attach_source_creates_source_and_dispatches_indexing(
+    client: AsyncClient, db_session: AsyncSession, unique_email: str
+) -> None:
+    token = await _register_and_login(client, unique_email)
+    user_id = await _user_id(db_session, unique_email)
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "Physics"}, headers=_auth(token)
+    )
+    notebook_id = notebook.json()["id"]
+
+    done_document = await _create_document(
+        db_session, user_id, parse_status=DocumentParseStatus.DONE
+    )
+
+    with patch("app.api.v1.notebooks.index_notebook_source_task.delay") as mock_delay:
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/sources",
+            json={"document_id": str(done_document.id)},
+            headers=_auth(token),
+        )
+
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["document_id"] == str(done_document.id)
+    assert body["indexing_status"] == NotebookSourceIndexStatus.PENDING.value
+    mock_delay.assert_called_once_with(body["id"])
+
+    detail = await client.get(f"/api/v1/notebooks/{notebook_id}", headers=_auth(token))
+    assert len(detail.json()["sources"]) == 1
+
+
+async def test_attach_source_rejects_another_users_document(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    token_a = await _register_and_login(client, "attach-owner@example.com")
+    await _register_and_login(client, "attach-other@example.com")
+    other_user_id = await _user_id(db_session, "attach-other@example.com")
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "A's notebook"}, headers=_auth(token_a)
+    )
+    notebook_id = notebook.json()["id"]
+
+    other_users_document = await _create_document(
+        db_session, other_user_id, parse_status=DocumentParseStatus.DONE
+    )
+
+    with patch("app.api.v1.notebooks.index_notebook_source_task.delay") as mock_delay:
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/sources",
+            json={"document_id": str(other_users_document.id)},
+            headers=_auth(token_a),
+        )
+
+    assert resp.status_code == 404
+    mock_delay.assert_not_called()
+
+
+async def test_detach_source_removes_it(
+    client: AsyncClient, db_session: AsyncSession, unique_email: str
+) -> None:
+    token = await _register_and_login(client, unique_email)
+    user_id = await _user_id(db_session, unique_email)
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "History"}, headers=_auth(token)
+    )
+    notebook_id = notebook.json()["id"]
+
+    done_document = await _create_document(
+        db_session, user_id, parse_status=DocumentParseStatus.DONE
+    )
+
+    with patch("app.api.v1.notebooks.index_notebook_source_task.delay"):
+        attach_resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/sources",
+            json={"document_id": str(done_document.id)},
+            headers=_auth(token),
+        )
+    source_id = attach_resp.json()["id"]
+
+    detach_resp = await client.delete(
+        f"/api/v1/notebooks/{notebook_id}/sources/{source_id}", headers=_auth(token)
+    )
+    assert detach_resp.status_code == 204
+
+    detail = await client.get(f"/api/v1/notebooks/{notebook_id}", headers=_auth(token))
+    assert detail.json()["sources"] == []
+
+
+async def test_cannot_detach_source_from_another_users_notebook(
+    client: AsyncClient, db_session: AsyncSession, unique_email: str
+) -> None:
+    token_a = await _register_and_login(client, unique_email)
+    token_b = await _register_and_login(client, "detach-intruder@example.com")
+    user_id = await _user_id(db_session, unique_email)
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "Geography"}, headers=_auth(token_a)
+    )
+    notebook_id = notebook.json()["id"]
+
+    done_document = await _create_document(
+        db_session, user_id, parse_status=DocumentParseStatus.DONE
+    )
+
+    with patch("app.api.v1.notebooks.index_notebook_source_task.delay"):
+        attach_resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/sources",
+            json={"document_id": str(done_document.id)},
+            headers=_auth(token_a),
+        )
+    source_id = attach_resp.json()["id"]
+
+    resp = await client.delete(
+        f"/api/v1/notebooks/{notebook_id}/sources/{source_id}", headers=_auth(token_b)
+    )
+    assert resp.status_code == 404

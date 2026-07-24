@@ -19,7 +19,7 @@ The security posture reference: auth model, secrets handling, data protection, k
 ## Structure
 
 ### Authentication & Authorization
-JWT bearer tokens; Google OAuth as an alternative login path. Token expiry + refresh strategy TBD at implementation. Row-level authorization: a user can only ever read/write their own courses/notebooks/documents/quizzes — enforced at the query layer, not just the API layer.
+JWT bearer tokens; Google OAuth (ID token verification) as an alternative login path. Short-lived access token (30 min default) + longer-lived refresh token (30 days default), issued as a pair on login/refresh; both expiry values are configurable via environment variables. Row-level authorization: a user can only ever read/write their own courses/notebooks/documents/quizzes — enforced at the query layer, not just the API layer.
 
 ### Secrets Management
 All API keys (Gemini, NotebookLM, OpenRouter, Tavily/Brave, Supabase) live in environment variables, never committed. `.env.example` documents required keys with placeholder values only. Production secrets injected via deployment environment (`docs/DEPLOYMENT.md`), never baked into Docker images.
@@ -40,5 +40,4 @@ Pin dependencies (`CONTRIBUTING.md#dependency-policy`); review new dependencies 
 ### Reporting
 <!-- TODO: add security contact / disclosure process once this repo has external contributors -->
 
-<!-- TODO: define token expiry/refresh policy at Phase 1 implementation -->
 <!-- TODO: document each AI provider's data retention policy before Phase 1 ships -->

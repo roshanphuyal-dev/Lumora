@@ -1,0 +1,25 @@
+[project]
+name = "lumora-ai"
+version = "0.1.0"
+description = "Lumora AI provider integrations and orchestration"
+requires-python = ">=3.12"
+dependencies = [
+    "google-genai>=2.14.0",
+    "pydantic>=2.13.4",
+]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = [
+    "ai",
+    "ai.gemini",
+    "ai.notebooklm",
+    "ai.orchestrator",
+    "ai.prompts",
+]
+
+[tool.setuptools.package-dir]
+ai = "."

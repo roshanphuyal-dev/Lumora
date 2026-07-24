@@ -1,0 +1,53 @@
+"""Gemini provider client (ADR 0005).
+
+The only place `google.genai` is imported (.claude/rules/ai.md) — nothing outside `ai/`
+should import it directly. Wraps Gemini 2.5 Flash for the orchestrator's
+`TaskType.TEACHING_EXPLANATION` task; the orchestrator (`ai/orchestrator/`) is the only
+intended caller.
+"""
+
+from __future__ import annotations
+
+import os
+
+from google import genai
+from google.genai import types
+
+from ai.prompts.teaching_explanation_v1 import SYSTEM_PROMPT, render_user_prompt
+
+_MODEL_NAME = "gemini-2.5-flash"
+
+
+class GeminiError(RuntimeError):
+    """Raised when the Gemini API call fails, is misconfigured, or returns no usable text."""
+
+
+class GeminiClient:
+    """Thin wrapper around the `google-genai` SDK for teaching-explanation calls."""
+
+    def __init__(self, api_key: str | None = None) -> None:
+        resolved_key = api_key or os.environ.get("GEMINI_API_KEY")
+        if not resolved_key:
+            raise GeminiError("GEMINI_API_KEY is not configured (see backend/.env.example).")
+        self._client = genai.Client(api_key=resolved_key)
+
+    async def generate_teaching_explanation(self, question: str, context: str = "") -> str:
+        """Ask Gemini to explain `question`, optionally grounded in `context`.
+
+        `context` is treated strictly as reference data by the prompt template
+        (`ai/prompts/teaching_explanation_v1.py`), never as instructions.
+        """
+        user_prompt = render_user_prompt(question=question, context=context)
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=_MODEL_NAME,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+            )
+        except Exception as exc:  # noqa: BLE001 - normalize every provider error to GeminiError
+            raise GeminiError(f"Gemini generation failed: {exc}") from exc
+
+        text = response.text
+        if not text:
+            raise GeminiError("Gemini returned an empty response.")
+        return text

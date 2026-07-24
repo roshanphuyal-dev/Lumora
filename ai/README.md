@@ -1,6 +1,6 @@
 # ai/
 
-AI orchestration, prompts, RAG, and provider integrations (Gemini, NotebookLM, OpenRouter). Not yet scaffolded.
+AI orchestration, prompts, RAG, and provider integrations (Gemini, NotebookLM, OpenRouter). Orchestrator, Gemini client, and a stubbed NotebookLM client are scaffolded (`orchestrator/`, `gemini/`, `notebooklm/`, `prompts/`); OpenRouter, embeddings, and RAG retrieval are not yet.
 
 - AI handbook: [`docs/AI.md`](../docs/AI.md)
 - Pipelines: [`docs/AI_WORKFLOWS.md`](../docs/AI_WORKFLOWS.md)

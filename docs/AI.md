@@ -52,6 +52,8 @@ The orchestration layer (`ai/orchestrator/`) is the *only* place feature code ta
 
 Routing decisions are made once, at the orchestration layer, based on a `task_type` enum — feature code declares *what it needs*, not *which model to call*.
 
+**Implementation status (Phase 1):** the `task_type` enum lives in `ai/orchestrator/task_types.py`; routing is implemented in `ai/orchestrator/orchestrator.py`. Only the first two routing-order steps above exist so far — `DOCUMENT_INDEX` → NotebookLM and `TEACHING_EXPLANATION` → Gemini; search fallback and OpenRouter degraded-quality fallback (steps 3–5) aren't built yet. The Gemini call is real (`ai/gemini/client.py`, `google-genai`, Gemini 2.5 Flash). The NotebookLM call is also real now — `ai/notebooklm/client.py` shells out to the `nlm` CLI (`notebooklm-mcp-cli`) as an async subprocess: `ensure_remote_notebook` creates/reuses the notebook's remote NotebookLM id (cached on `Notebook.notebooklm_notebook_id`), and `index_document` uploads the source file and blocks (`--wait`) until NotebookLM finishes indexing server-side. Auth is out-of-band (`nlm login`, once per machine — `docs/DEPLOYMENT.md#manual-deploy-prerequisites-not-automatable-via-envsecrets`), not an env var. This has not been exercised against a live, authenticated `nlm` profile yet (`docs/DECISIONS.md#known-debt-not-yet-adr-worthy`) — the response-parsing is defensive against a few plausible `--json` output shapes rather than a confirmed schema, so treat it as implemented-but-unverified until a live smoke test happens.
+
 ### RAG Design
 
 - **Chunking**: documents split into semantically coherent chunks (target size TBD in implementation) at ingest time, not at query time.
@@ -69,6 +71,5 @@ Routing decisions are made once, at the orchestration layer, based on a `task_ty
 ### Model Selection Heuristics
 Small/cheap model → formatting. Medium → summaries. NotebookLM → document understanding. Gemini → complex reasoning/teaching. Selection is automatic (orchestration layer), never hardcoded per-feature.
 
-<!-- TODO: define task_type enum once orchestrator is implemented -->
 <!-- TODO: document actual chunk size/overlap once tuned against real documents -->
 <!-- TODO: document re-ranking algorithm once selected -->
