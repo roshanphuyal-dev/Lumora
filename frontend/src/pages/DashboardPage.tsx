@@ -1,7 +1,8 @@
-import { UploadCloud, NotebookText, Target, TrendingUp, Flame } from "lucide-react"
+import { UploadCloud, Target, TrendingUp, Flame } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
+import { NotebooksSection } from "@/components/dashboard/NotebooksSection"
 
 // Phase 1 supports upload + notebooks only (docs/ROADMAP.md). Weak topics, learning
 // progress, and streaks depend on quiz/evaluation (Phase 3-4) and have no real backend
@@ -35,15 +36,7 @@ export function DashboardPage() {
         </CardContent>
       </Card>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-foreground">Your notebooks</h2>
-        <Card>
-          <CardContent className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
-            <NotebookText className="size-6" aria-hidden="true" />
-            <p className="text-sm">Nothing here yet — upload a document to create your first notebook.</p>
-          </CardContent>
-        </Card>
-      </section>
+      <NotebooksSection />
 
       <section className="flex flex-col gap-1">
         <h2 className="text-sm font-medium text-muted-foreground">Coming soon</h2>
