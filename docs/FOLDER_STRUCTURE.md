@@ -51,6 +51,7 @@ backend/
 │   ├── workers/      # celery_app.py, document_tasks.py, notebook_tasks.py
 │   └── main.py
 ├── alembic/           # env.py + versions/ (users/courses/subjects; documents/notebooks/notebook_sources)
+├── scripts/           # seed_test_user.py — one-off/maintenance scripts (docs/FOLDER_STRUCTURE.md's "added when the first one is needed" — this is it)
 ├── tests/             # conftest.py, test_auth.py, test_courses.py, test_document_service.py, test_document_tasks.py, test_parsers.py, test_storage.py
 ├── .env.example
 └── pyproject.toml

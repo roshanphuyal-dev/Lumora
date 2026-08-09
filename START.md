@@ -71,8 +71,20 @@ pnpm dev
 → http://localhost:5173 — open this and test through the actual UI: register, upload a
 PDF/DOCX/PPTX/image, watch it parse, ask it a question, delete it.
 
+## Test account (skip registering every time)
+
+```bash
+cd backend
+uv run python scripts/seed_test_user.py
+```
+Creates (or confirms) a fixed account: `test@lumora.dev` / `testpass123`. Safe to run
+repeatedly — idempotent, reports "already exists" instead of erroring on a second run.
+
 ## Notes
 
+- **"Can't reach the server..." on register/login?** The frontend can't reach the backend at
+  all — it's not running, on the wrong port, or CORS-blocked. Check the backend terminal
+  from step 2 above; `curl http://localhost:8000/health` should return `{"status":"ok"}`.
 - **Why redis is on 6380, not 6379**: another local Redis (`ids_redis`, unrelated to this
   project) was already holding 6379 on this machine. `docker/docker-compose.yml` maps
   `6380:6379`. If you don't have that conflict, you can change it back to `6379:6379` and
