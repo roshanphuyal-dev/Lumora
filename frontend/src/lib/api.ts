@@ -15,17 +15,37 @@ export class ApiError extends Error {
 // route render redirects to /login (RequireAuth). Silent access-token refresh
 // is a follow-up once more than one protected page exists to justify it.
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  return handleResponse<T>(
+    await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeader(),
+        ...init?.headers,
+      },
+    }),
+  )
+}
+
+// Multipart upload: no Content-Type header -- the browser sets it (with the
+// multipart boundary) from the FormData body. Setting it manually breaks the
+// boundary and the backend can't parse the request.
+export async function apiFetchForm<T>(path: string, formData: FormData): Promise<T> {
+  return handleResponse<T>(
+    await fetch(`${API_BASE_URL}${path}`, {
+      method: "POST",
+      headers: authHeader(),
+      body: formData,
+    }),
+  )
+}
+
+function authHeader(): Record<string, string> {
   const accessToken = getAccessToken()
+  return accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
+}
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      ...init?.headers,
-    },
-  })
-
+async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     if (response.status === 401) clearTokens()
     throw new ApiError(response.status, await extractErrorMessage(response))
