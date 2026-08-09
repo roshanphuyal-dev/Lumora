@@ -40,7 +40,7 @@ from ai.orchestrator.schemas import DocumentIndexRequest
 from ai.orchestrator.task_types import TaskType
 
 from app.core.storage import get_file_storage
-from app.db.session import async_session_maker
+from app.db.session import celery_session_maker
 from app.services import document_service, notebook_service
 from app.workers.celery_app import celery_app
 
@@ -58,7 +58,7 @@ def index_notebook_source_task(notebook_source_id: str) -> None:
 
 
 async def _index_notebook_source(notebook_source_id: uuid.UUID) -> None:
-    async with async_session_maker() as db:
+    async with celery_session_maker() as db:
         source = await notebook_service.get_source(db, notebook_source_id)
         document = await document_service.get_document(db, source.document_id)
         notebook = await notebook_service.get_notebook(db, source.notebook_id)

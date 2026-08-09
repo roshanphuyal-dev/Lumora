@@ -61,7 +61,7 @@ async def test_index_notebook_source_persists_remote_id_and_cleans_temp_file(
         assert file_path.read_bytes() == b"%PDF-fake%"
 
     with (
-        patch("app.workers.notebook_tasks.async_session_maker", TestSessionLocal),
+        patch("app.workers.notebook_tasks.celery_session_maker", TestSessionLocal),
         patch("app.workers.notebook_tasks.get_file_storage", return_value=fake_storage),
         patch(
             "app.workers.notebook_tasks.NotebookLMClient",
@@ -105,7 +105,7 @@ async def test_index_notebook_source_marks_failed_and_cleans_temp_file_on_error(
         raise OrchestrationError("CLI upload failed")
 
     with (
-        patch("app.workers.notebook_tasks.async_session_maker", TestSessionLocal),
+        patch("app.workers.notebook_tasks.celery_session_maker", TestSessionLocal),
         patch("app.workers.notebook_tasks.get_file_storage", return_value=fake_storage),
         patch(
             "app.workers.notebook_tasks.NotebookLMClient",

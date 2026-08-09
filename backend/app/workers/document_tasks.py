@@ -13,7 +13,7 @@ import logging
 import uuid
 
 from app.core.storage import get_file_storage
-from app.db.session import async_session_maker
+from app.db.session import celery_session_maker
 from app.parsers import get_parser
 from app.services import document_service
 from app.workers.celery_app import celery_app
@@ -32,7 +32,7 @@ def parse_document_task(document_id: str) -> None:
 
 
 async def _parse_document(document_id: uuid.UUID) -> None:
-    async with async_session_maker() as db:
+    async with celery_session_maker() as db:
         document = await document_service.mark_processing(db, document_id)
 
         try:

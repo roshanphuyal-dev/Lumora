@@ -35,7 +35,7 @@ async def test_parse_document_marks_done_on_success(db_session: AsyncSession) ->
     fake_storage.download.return_value = b"%PDF-fake%"
 
     with (
-        patch("app.workers.document_tasks.async_session_maker", TestSessionLocal),
+        patch("app.workers.document_tasks.celery_session_maker", TestSessionLocal),
         patch("app.workers.document_tasks.get_file_storage", return_value=fake_storage),
         patch(
             "app.workers.document_tasks.get_parser",
@@ -58,7 +58,7 @@ async def test_parse_document_marks_failed_on_parser_error(db_session: AsyncSess
         raise ValueError("bad file")
 
     with (
-        patch("app.workers.document_tasks.async_session_maker", TestSessionLocal),
+        patch("app.workers.document_tasks.celery_session_maker", TestSessionLocal),
         patch("app.workers.document_tasks.get_file_storage", return_value=fake_storage),
         patch("app.workers.document_tasks.get_parser", return_value=_boom),
     ):
@@ -74,7 +74,7 @@ async def test_parse_document_marks_failed_when_file_missing(db_session: AsyncSe
     fake_storage.download.side_effect = FileNotFoundError("no such file")
 
     with (
-        patch("app.workers.document_tasks.async_session_maker", TestSessionLocal),
+        patch("app.workers.document_tasks.celery_session_maker", TestSessionLocal),
         patch("app.workers.document_tasks.get_file_storage", return_value=fake_storage),
     ):
         await _parse_document(document.id)
