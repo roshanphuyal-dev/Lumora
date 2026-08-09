@@ -1,5 +1,8 @@
 from unittest.mock import patch
 
+from ai.orchestrator.orchestrator import OrchestrationError
+from ai.orchestrator.schemas import AIResponse, ProviderName
+from ai.orchestrator.task_types import TaskType
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -240,3 +243,76 @@ async def test_cannot_detach_source_from_another_users_notebook(
         f"/api/v1/notebooks/{notebook_id}/sources/{source_id}", headers=_auth(token_b)
     )
     assert resp.status_code == 404
+
+
+async def test_ask_returns_content_and_provider(client: AsyncClient, unique_email: str) -> None:
+    token = await _register_and_login(client, unique_email)
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "Chemistry"}, headers=_auth(token)
+    )
+    notebook_id = notebook.json()["id"]
+
+    fake_response = AIResponse(
+        task_type=TaskType.TEACHING_EXPLANATION,
+        provider=ProviderName.GEMINI,
+        content="A mole is 6.022e23 particles.",
+        citations=[],
+        metadata={},
+    )
+    with patch(
+        "app.services.notebook_service.run_task", return_value=fake_response
+    ) as mock_run_task:
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/ask",
+            json={"question": "What is a mole?"},
+            headers=_auth(token),
+        )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"content": "A mole is 6.022e23 particles.", "provider": "gemini"}
+    mock_run_task.assert_awaited_once()
+
+
+async def test_ask_404s_for_notebook_the_caller_does_not_own(
+    client: AsyncClient, unique_email: str
+) -> None:
+    token_a = await _register_and_login(client, unique_email)
+    token_b = await _register_and_login(client, "ask-intruder@example.com")
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "Physics"}, headers=_auth(token_a)
+    )
+    notebook_id = notebook.json()["id"]
+
+    with patch("app.services.notebook_service.run_task") as mock_run_task:
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/ask",
+            json={"question": "What is momentum?"},
+            headers=_auth(token_b),
+        )
+
+    assert resp.status_code == 404
+    mock_run_task.assert_not_awaited()
+
+
+async def test_ask_returns_502_when_orchestrator_fails(
+    client: AsyncClient, unique_email: str
+) -> None:
+    token = await _register_and_login(client, unique_email)
+
+    notebook = await client.post("/api/v1/notebooks", json={"name": "Math"}, headers=_auth(token))
+    notebook_id = notebook.json()["id"]
+
+    with patch(
+        "app.services.notebook_service.run_task",
+        side_effect=OrchestrationError("every provider failed"),
+    ):
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/ask",
+            json={"question": "What is a derivative?"},
+            headers=_auth(token),
+        )
+
+    assert resp.status_code == 502
+    assert "every provider failed" in resp.json()["detail"]

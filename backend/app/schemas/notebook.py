@@ -37,3 +37,18 @@ class NotebookSourceCreate(BaseModel):
 
 class NotebookDetail(NotebookRead):
     sources: list[NotebookSourceRead] = Field(default_factory=list)
+
+
+class NotebookAskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+
+
+class NotebookAskResponse(BaseModel):
+    """No `citations` field: nothing grounds this answer in the notebook's sources yet
+    (RAG retrieval is Phase 4, `docs/ROADMAP.md`) -- this is a plain teaching-explanation
+    call (`docs/AI.md#routing-logic` step 2), and a citations field with nothing real to
+    put in it would misrepresent the answer as source-grounded.
+    """
+
+    content: str
+    provider: str

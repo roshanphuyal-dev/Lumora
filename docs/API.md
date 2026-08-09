@@ -29,6 +29,7 @@ The contract reference for the FastAPI backend: endpoint groups, auth model, ver
   - `POST /notebooks`, `GET /notebooks` (paginated), `GET /notebooks/{id}` (detail includes attached `sources`), `DELETE /notebooks/{id}`.
   - `POST /notebooks/{id}/sources` — attach a `document_id` as a source; requires the document's `parse_status == done` (409 otherwise); dispatches NotebookLM indexing (Celery) and returns the source with `indexing_status=pending`.
   - `DELETE /notebooks/{id}/sources/{source_id}` — detach a source.
+  - `POST /notebooks/{id}/ask` — plain (ungrounded) teaching-explanation question via the orchestration layer (Gemini, OpenCode Zen fallback, ADR 0008); returns `{content, provider}`. Not RAG-grounded yet (no `citations` in the response) — see the **AI API** row below for the grounded version once RAG lands (`docs/ROADMAP.md` Phase 4).
 - **Notebook Search API** — semantic search within a notebook.
 - **AI API** — chat, explain, generate (routes to orchestration layer per `docs/AI.md`).
 - **Quiz API** — generate, fetch, submit attempts.

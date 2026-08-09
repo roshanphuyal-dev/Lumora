@@ -5,6 +5,8 @@ from fastapi import APIRouter, Query, status
 from app.core.dependencies import CurrentUser, DbSession
 from app.schemas.course import Page
 from app.schemas.notebook import (
+    NotebookAskRequest,
+    NotebookAskResponse,
     NotebookCreate,
     NotebookDetail,
     NotebookRead,
@@ -76,9 +78,9 @@ async def attach_source(
     Requires the document to have finished parsing (`parse_status == done`) —
     NotebookLM indexing needs already-extracted text
     (`ai/orchestrator/schemas.py:DocumentIndexRequest`); returns 409 otherwise.
-    Indexing itself won't currently resolve to `indexed` for real — see
-    `app/workers/notebook_tasks.py`'s docstring for why (NotebookLM CLI/MCP
-    integration is stubbed).
+    Indexing requires a machine with `nlm` installed and `nlm login` already
+    run (`docs/DEPLOYMENT.md`) — without that, the Celery task marks the
+    source `failed` rather than `indexed`; see `app/workers/notebook_tasks.py`.
     """
     source = await notebook_service.attach_source(
         db, current_user.id, notebook_id, payload.document_id
@@ -92,3 +94,23 @@ async def detach_source(
     notebook_id: uuid.UUID, source_id: uuid.UUID, current_user: CurrentUser, db: DbSession
 ) -> None:
     await notebook_service.detach_source(db, current_user.id, notebook_id, source_id)
+
+
+@router.post("/{notebook_id}/ask", response_model=NotebookAskResponse)
+async def ask_notebook_question(
+    notebook_id: uuid.UUID,
+    payload: NotebookAskRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> NotebookAskResponse:
+    """Ask a plain teaching-explanation question (`docs/AI.md#routing-logic` step 2).
+
+    Not grounded in the notebook's sources yet — no RAG retrieval exists
+    (`docs/ROADMAP.md` Phase 4), so this is a direct Gemini/OpenCode Zen call
+    (`ai/orchestrator/orchestrator.py`, ADR 0008 fallback included), scoped
+    only in that it 404s for a notebook the caller doesn't own.
+    """
+    content, provider = await notebook_service.ask_question(
+        db, current_user.id, notebook_id, payload.question
+    )
+    return NotebookAskResponse(content=content, provider=provider)

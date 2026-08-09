@@ -8,6 +8,9 @@ only on ids the backend itself already checked ownership for).
 
 import uuid
 
+from ai.orchestrator.orchestrator import OrchestrationError, run_task
+from ai.orchestrator.schemas import TeachingExplanationRequest
+from ai.orchestrator.task_types import TaskType
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,6 +74,33 @@ async def delete_notebook(db: AsyncSession, owner_id: uuid.UUID, notebook_id: uu
     notebook = await get_owned_notebook(db, owner_id, notebook_id)
     await db.delete(notebook)
     await db.commit()
+
+
+async def ask_question(
+    db: AsyncSession, owner_id: uuid.UUID, notebook_id: uuid.UUID, question: str
+) -> tuple[str, str]:
+    """Ask a plain (ungrounded) teaching-explanation question, scoped to an owned notebook.
+
+    No RAG retrieval yet (`docs/ROADMAP.md` Phase 4) -- `context` stays empty rather than
+    fabricating grounding from the notebook's sources. The notebook ownership check is the
+    only reason this takes `notebook_id` at all; nothing about the question is notebook-
+    specific yet. Returns `(content, provider)` rather than the full `AIResponse` since the
+    route has nothing use for citations/metadata on an ungrounded answer.
+    """
+    await get_owned_notebook(db, owner_id, notebook_id)
+
+    try:
+        response = await run_task(
+            TaskType.TEACHING_EXPLANATION,
+            TeachingExplanationRequest(question=question),
+        )
+    except OrchestrationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Couldn't get an answer right now: {exc}",
+        ) from exc
+
+    return response.content, response.provider.value
 
 
 async def attach_source(
