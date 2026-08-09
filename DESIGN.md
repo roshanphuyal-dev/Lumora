@@ -128,7 +128,10 @@ Rounded, not sharp: base radius `0.5rem` (8px), scaling to `0.7rem` (11.2px) for
 - **Mobile:** sidebar hidden below `md`; replaced by a wordmark-only top bar (see Layout).
 
 ### Ledger Row (signature component)
-The pattern for any "not yet available" content: a single bordered container, one row per item (icon + label + "Soon" badge), rows divided by 1px hairline separators — never separate same-size cards. Established directly in response to the first build's mistake (see Overview); this is now the standard treatment for all inert/placeholder content project-wide, not specific to the dashboard.
+The pattern for any "not yet available" content: a single bordered container, one row per item (icon + label + "Soon" badge), rows divided by 1px hairline separators — never separate same-size cards. Established directly in response to the first build's mistake (see Overview); this is now the standard treatment for all inert/placeholder content project-wide, not specific to the dashboard. Reused as-is for the disabled "Continue with Google" control on the auth pages.
+
+### Auth Layout
+Unauthenticated routes (`/login`, `/register`) do not inherit the sidebar shell — there is nothing to navigate to yet. A single centered column (`max-w-sm`), wordmark above the form, no imagery: the same Restrained-strategy discipline as the dashboard, not a Persuade-mode marketing split. Errors render as `text-destructive` copy above the submit button, never a toast or modal (`.claude/rules/ui.md`: no modal interruptions).
 
 ## Do's and Don'ts
 
