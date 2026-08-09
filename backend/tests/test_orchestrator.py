@@ -17,6 +17,8 @@ from ai.notebooklm.client import (
     DocumentIndexResult,
     NotebookLMClient,
     NotebookLMError,
+    NotebookQueryResult,
+    QuerySourceCitation,
 )
 from ai.opencode_zen.client import OpenCodeZenClient, OpenCodeZenError
 from ai.orchestrator.orchestrator import OrchestrationError, run_task
@@ -24,6 +26,7 @@ from ai.orchestrator.schemas import (
     AIResponse,
     Citation,
     DocumentIndexRequest,
+    NotebookQueryRequest,
     ProviderName,
     TeachingExplanationRequest,
 )
@@ -82,6 +85,53 @@ async def test_teaching_explanation_routes_to_gemini() -> None:
     assert response.content == "A derivative is a rate of change."
     # Citations carried through end-to-end (.claude/rules/ai.md).
     assert response.citations == request.citations
+
+
+def _notebook_query_request() -> NotebookQueryRequest:
+    return NotebookQueryRequest(notebooklm_notebook_id="nb-1", question="What is a mole?")
+
+
+async def test_notebook_query_routes_to_notebooklm() -> None:
+    mock_client = AsyncMock(spec=NotebookLMClient)
+    mock_client.query_notebook.return_value = NotebookQueryResult(
+        answer="A mole is 6.022e23 particles.",
+        citations=[QuerySourceCitation(notebooklm_source_id="nlm-src-1", citation_number=1)],
+    )
+
+    response = await run_task(
+        TaskType.NOTEBOOK_QUERY, _notebook_query_request(), notebooklm_client=mock_client
+    )
+
+    mock_client.query_notebook.assert_awaited_once_with(
+        notebooklm_notebook_id="nb-1", question="What is a mole?"
+    )
+    assert response.task_type == TaskType.NOTEBOOK_QUERY
+    assert response.provider == ProviderName.NOTEBOOKLM
+    assert response.content == "A mole is 6.022e23 particles."
+    assert response.citations == [Citation(source_id="nlm-src-1")]
+
+
+async def test_notebook_query_rejects_mismatched_request_type() -> None:
+    mock_client = AsyncMock(spec=NotebookLMClient)
+
+    with pytest.raises(OrchestrationError, match="NotebookQueryRequest"):
+        await run_task(
+            TaskType.NOTEBOOK_QUERY,
+            _teaching_explanation_request(),
+            notebooklm_client=mock_client,
+        )
+
+    mock_client.query_notebook.assert_not_awaited()
+
+
+async def test_notebook_query_wraps_notebooklm_error() -> None:
+    mock_client = AsyncMock(spec=NotebookLMClient)
+    mock_client.query_notebook.side_effect = NotebookLMError("not authenticated")
+
+    with pytest.raises(OrchestrationError, match="not authenticated"):
+        await run_task(
+            TaskType.NOTEBOOK_QUERY, _notebook_query_request(), notebooklm_client=mock_client
+        )
 
 
 async def test_document_index_rejects_mismatched_request_type() -> None:

@@ -58,13 +58,21 @@ export function detachSource(notebookId: string, sourceId: string): Promise<void
   return apiFetch<void>(`/notebooks/${notebookId}/sources/${sourceId}`, { method: "DELETE" })
 }
 
+export interface AskCitation {
+  source_id: string
+  chunk_id: string | null
+  excerpt: string | null
+}
+
 export interface AskResponse {
   content: string
   provider: string
+  citations: AskCitation[]
 }
 
-// Not RAG-grounded yet (docs/ROADMAP.md Phase 4) -- a plain teaching-explanation call,
-// no citations to show (backend/app/schemas/notebook.py:NotebookAskResponse).
+// Grounded (NotebookLM retrieval + Gemini framing) once the notebook has an indexed
+// source; otherwise a plain teaching-explanation call with empty citations
+// (backend/app/schemas/notebook.py:NotebookAskResponse, backend/app/services/notebook_service.py:ask_question).
 export function askNotebook(notebookId: string, question: string): Promise<AskResponse> {
   return apiFetch<AskResponse>(`/notebooks/${notebookId}/ask`, {
     method: "POST",

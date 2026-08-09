@@ -14,6 +14,8 @@ from ai.notebooklm.client import (
     DocumentIndexResult,
     NotebookLMClient,
     NotebookLMError,
+    NotebookQueryResult,
+    QuerySourceCitation,
 )
 
 
@@ -134,6 +136,68 @@ async def test_index_document_raises_when_source_id_missing_from_response() -> N
     ):
         with pytest.raises(NotebookLMError, match="no source id"):
             await client.index_document(notebooklm_notebook_id="nb-1", file_path="/tmp/notes.pdf")
+
+
+# --- query_notebook -------------------------------------------------------------
+
+
+async def test_query_notebook_happy_path_parses_answer_and_citations() -> None:
+    client = NotebookLMClient()
+    proc = _mock_proc(
+        returncode=0,
+        stdout=b'{"answer": "A mole is 6.022e23 particles.", "question": "What is a mole?", '
+        b'"references": [{"source_id": "src-1", "citation_number": 1}]}',
+    )
+
+    with (
+        patch("ai.notebooklm.client.shutil.which", return_value="/usr/bin/nlm"),
+        patch(
+            "ai.notebooklm.client.asyncio.create_subprocess_exec", return_value=proc
+        ) as mock_exec,
+    ):
+        result = await client.query_notebook(
+            notebooklm_notebook_id="nb-1", question="What is a mole?"
+        )
+
+    assert result == NotebookQueryResult(
+        answer="A mole is 6.022e23 particles.",
+        citations=[QuerySourceCitation(notebooklm_source_id="src-1", citation_number=1)],
+    )
+    mock_exec.assert_awaited_once_with(
+        "nlm",
+        "notebook",
+        "query",
+        "nb-1",
+        "What is a mole?",
+        "--json",
+        stdout=-1,
+        stderr=-1,
+    )
+
+
+async def test_query_notebook_defaults_citations_to_empty_when_absent() -> None:
+    client = NotebookLMClient()
+    proc = _mock_proc(returncode=0, stdout=b'{"answer": "A mole is 6.022e23 particles."}')
+
+    with (
+        patch("ai.notebooklm.client.shutil.which", return_value="/usr/bin/nlm"),
+        patch("ai.notebooklm.client.asyncio.create_subprocess_exec", return_value=proc),
+    ):
+        result = await client.query_notebook(notebooklm_notebook_id="nb-1", question="?")
+
+    assert result.citations == []
+
+
+async def test_query_notebook_raises_when_answer_missing_from_response() -> None:
+    client = NotebookLMClient()
+    proc = _mock_proc(returncode=0, stdout=b'{"references": []}')
+
+    with (
+        patch("ai.notebooklm.client.shutil.which", return_value="/usr/bin/nlm"),
+        patch("ai.notebooklm.client.asyncio.create_subprocess_exec", return_value=proc),
+    ):
+        with pytest.raises(NotebookLMError, match="no answer"):
+            await client.query_notebook(notebooklm_notebook_id="nb-1", question="?")
 
 
 # --- error paths shared by both public methods ----------------------------------

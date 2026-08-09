@@ -103,14 +103,13 @@ async def ask_notebook_question(
     current_user: CurrentUser,
     db: DbSession,
 ) -> NotebookAskResponse:
-    """Ask a plain teaching-explanation question (`docs/AI.md#routing-logic` step 2).
-
-    Not grounded in the notebook's sources yet — no RAG retrieval exists
-    (`docs/ROADMAP.md` Phase 4), so this is a direct Gemini/OpenCode Zen call
-    (`ai/orchestrator/orchestrator.py`, ADR 0008 fallback included), scoped
-    only in that it 404s for a notebook the caller doesn't own.
+    """Ask a teaching-explanation question, grounded in the notebook's indexed sources
+    when it has any (`docs/AI.md#routing-logic` step 1 -> step 2,
+    `app/services/notebook_service.py:ask_question`); falls back to a plain Gemini/OpenCode
+    Zen call (ADR 0008 fallback included) otherwise. 404s for a notebook the caller doesn't
+    own.
     """
-    content, provider = await notebook_service.ask_question(
+    content, provider, citations = await notebook_service.ask_question(
         db, current_user.id, notebook_id, payload.question
     )
-    return NotebookAskResponse(content=content, provider=provider)
+    return NotebookAskResponse(content=content, provider=provider, citations=citations)

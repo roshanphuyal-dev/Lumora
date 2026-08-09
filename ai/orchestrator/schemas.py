@@ -65,6 +65,16 @@ class DocumentIndexRequest(BaseModel):
     file_path: str
 
 
+class NotebookQueryRequest(BaseModel):
+    """Input for `TaskType.NOTEBOOK_QUERY` — ask a question against a notebook's already-
+    indexed sources. Retrieval only; hand the result to `TEACHING_EXPLANATION` as `context`
+    for teaching-framed phrasing (`docs/AI.md#routing-logic` step 1).
+    """
+
+    notebooklm_notebook_id: str
+    question: str
+
+
 class TeachingExplanationRequest(BaseModel):
     """Input for `TaskType.TEACHING_EXPLANATION`.
 

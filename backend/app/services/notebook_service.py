@@ -6,10 +6,11 @@ for the pattern this mirrors (worker-only lookups keyed by id alone, called
 only on ids the backend itself already checked ownership for).
 """
 
+import logging
 import uuid
 
 from ai.orchestrator.orchestrator import OrchestrationError, run_task
-from ai.orchestrator.schemas import TeachingExplanationRequest
+from ai.orchestrator.schemas import Citation, NotebookQueryRequest, TeachingExplanationRequest
 from ai.orchestrator.task_types import TaskType
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -19,6 +20,8 @@ from sqlalchemy.orm import selectinload
 from app.models.document import Document, DocumentParseStatus
 from app.models.notebook import Notebook, NotebookSource, NotebookSourceIndexStatus
 from app.schemas.course import PageResult
+
+logger = logging.getLogger(__name__)
 
 
 async def create_notebook(
@@ -78,21 +81,45 @@ async def delete_notebook(db: AsyncSession, owner_id: uuid.UUID, notebook_id: uu
 
 async def ask_question(
     db: AsyncSession, owner_id: uuid.UUID, notebook_id: uuid.UUID, question: str
-) -> tuple[str, str]:
-    """Ask a plain (ungrounded) teaching-explanation question, scoped to an owned notebook.
+) -> tuple[str, str, list[Citation]]:
+    """Ask a teaching-explanation question, grounded in the notebook's sources when possible.
 
-    No RAG retrieval yet (`docs/ROADMAP.md` Phase 4) -- `context` stays empty rather than
-    fabricating grounding from the notebook's sources. The notebook ownership check is the
-    only reason this takes `notebook_id` at all; nothing about the question is notebook-
-    specific yet. Returns `(content, provider)` rather than the full `AIResponse` since the
-    route has nothing use for citations/metadata on an ungrounded answer.
+    If the notebook has at least one `indexed` source, retrieves a grounded answer +
+    citations from NotebookLM first (`TaskType.NOTEBOOK_QUERY`,
+    `docs/AI.md#routing-logic` step 1) and hands it to Gemini as `context` for teaching
+    framing (`docs/AI_WORKFLOWS.md#4`). A notebook with no indexed sources yet (or a failed
+    NotebookLM retrieval — logged, not raised) falls back to the previous plain/ungrounded
+    call rather than failing the whole request over a missing/degraded knowledge base.
     """
-    await get_owned_notebook(db, owner_id, notebook_id)
+    notebook = await get_owned_notebook(db, owner_id, notebook_id)
+
+    context = ""
+    citations: list[Citation] = []
+    has_indexed_source = any(
+        source.indexing_status == NotebookSourceIndexStatus.INDEXED for source in notebook.sources
+    )
+    if notebook.notebooklm_notebook_id and has_indexed_source:
+        try:
+            retrieval = await run_task(
+                TaskType.NOTEBOOK_QUERY,
+                NotebookQueryRequest(
+                    notebooklm_notebook_id=notebook.notebooklm_notebook_id, question=question
+                ),
+            )
+        except OrchestrationError:
+            logger.warning(
+                "NotebookLM retrieval failed for notebook %s; falling back to an ungrounded answer",
+                notebook_id,
+                exc_info=True,
+            )
+        else:
+            context = retrieval.content
+            citations = retrieval.citations
 
     try:
         response = await run_task(
             TaskType.TEACHING_EXPLANATION,
-            TeachingExplanationRequest(question=question),
+            TeachingExplanationRequest(question=question, context=context, citations=citations),
         )
     except OrchestrationError as exc:
         raise HTTPException(
@@ -100,7 +127,7 @@ async def ask_question(
             detail=f"Couldn't get an answer right now: {exc}",
         ) from exc
 
-    return response.content, response.provider.value
+    return response.content, response.provider.value, response.citations
 
 
 async def attach_source(

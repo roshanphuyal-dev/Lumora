@@ -38,10 +38,10 @@ Documents each concrete AI pipeline end-to-end — trigger, steps, models involv
 
 ### 4. User Question → RAG → NotebookLM → Gemini (AI Chat)
 1. User asks a question in a notebook-scoped chat.
-2. Orchestrator embeds the question, retrieves top-k chunks from `pgvector` scoped to the notebook.
-3. NotebookLM cross-references for multi-document reasoning/citation if multiple sources are relevant.
-4. Gemini synthesizes an answer using retrieved context + conversation history, with citations attached.
-5. Response persisted to AI Chats; contributes to memory/personalization signal if it reveals a knowledge gap.
+2. **Implemented (partial):** if the notebook has at least one `indexed` source, the orchestrator asks NotebookLM directly (`TaskType.NOTEBOOK_QUERY`) for a grounded answer + citations across all its sources — this is NotebookLM's own retrieval, not yet the `pgvector` top-k chunk retrieval described below.
+3. **Not yet implemented:** orchestrator embeds the question and retrieves top-k chunks from `pgvector` scoped to the notebook (full RAG pipeline, `docs/ROADMAP.md` Phase 4); today NotebookLM's own cross-source reasoning covers this instead.
+4. Gemini synthesizes a teaching-framed answer using NotebookLM's retrieved answer as context (+ conversation history once persisted), with citations carried through. A notebook with no indexed sources yet, or a failed NotebookLM call, falls back to a plain ungrounded Gemini call.
+5. **Not yet implemented:** response persisted to AI Chats; contributes to memory/personalization signal if it reveals a knowledge gap.
 
 ### 5. Internet Search → Gemini
 1. Query determined to need current/external information (not covered by notebook sources) — see routing step 4 in `docs/AI.md`.

@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 
+from ai.orchestrator.schemas import Citation
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.notebook import NotebookSourceIndexStatus
@@ -44,11 +45,11 @@ class NotebookAskRequest(BaseModel):
 
 
 class NotebookAskResponse(BaseModel):
-    """No `citations` field: nothing grounds this answer in the notebook's sources yet
-    (RAG retrieval is Phase 4, `docs/ROADMAP.md`) -- this is a plain teaching-explanation
-    call (`docs/AI.md#routing-logic` step 2), and a citations field with nothing real to
-    put in it would misrepresent the answer as source-grounded.
+    """`citations` is empty unless the notebook has an indexed source and NotebookLM
+    retrieval succeeded (`app/services/notebook_service.py:ask_question`) -- an ungrounded
+    answer (no sources yet, or a degraded NotebookLM call) legitimately has none.
     """
 
     content: str
     provider: str
+    citations: list[Citation] = Field(default_factory=list)

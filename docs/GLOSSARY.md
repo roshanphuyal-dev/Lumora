@@ -23,7 +23,7 @@ Canonical definitions for domain terms used across `docs/` and the codebase. Thi
 - **Generated Material** — any AI-produced study artifact (notes, flashcards, quiz, study guide, mind map, etc.) — the generic table/category; specific types have their own tables where they need type-specific fields (`docs/DATABASE.md`).
 - **Note** vs **Study Guide** — a Note is a single-topic or single-source summary; a Study Guide is a broader, often multi-source, exam-oriented compilation. Both are Generated Materials.
 - **Orchestration Layer** — the backend component (`ai/orchestrator/`) that decides which AI provider handles a given request; see `docs/AI.md`.
-- **Task Type** — the enum the Orchestration Layer uses to decide routing (`ai/orchestrator/task_types.py`, e.g. `document_index`, `teaching_explanation`) — declared by feature code, never a hardcoded provider choice.
+- **Task Type** — the enum the Orchestration Layer uses to decide routing (`ai/orchestrator/task_types.py`, e.g. `document_index`, `notebook_query`, `teaching_explanation`) — declared by feature code, never a hardcoded provider choice.
 - **Weak Topic** — a topic the student has demonstrated low mastery on, derived from quiz performance and tracked for adaptive tutoring (`docs/AI.md#memory--personalization`).
 - **Grounding** — the property of an AI response being traceable to specific Source/Chunk citations, as opposed to unattributed generic model knowledge.
 

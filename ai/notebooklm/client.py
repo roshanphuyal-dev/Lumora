@@ -40,6 +40,22 @@ class DocumentIndexResult:
     status: str  # "indexed" | "failed"
 
 
+@dataclass(frozen=True)
+class QuerySourceCitation:
+    """One `references[]` entry from a `notebook query` response."""
+
+    notebooklm_source_id: str
+    citation_number: int | None
+
+
+@dataclass(frozen=True)
+class NotebookQueryResult:
+    """Result of asking a question against a notebook's already-indexed sources."""
+
+    answer: str
+    citations: list[QuerySourceCitation]
+
+
 class NotebookLMClient:
     """Thin async wrapper around the `nlm` CLI for notebook/source management."""
 
@@ -107,6 +123,37 @@ class NotebookLMClient:
                 f"id was found in its output: {stdout!r}"
             )
         return DocumentIndexResult(notebooklm_source_id=source_id, status=_extract_status(payload))
+
+    async def query_notebook(
+        self, *, notebooklm_notebook_id: str, question: str
+    ) -> NotebookQueryResult:
+        """Ask a question against a notebook's already-indexed sources and return the answer.
+
+        Runs `nlm notebook query <notebooklm_notebook_id> <question> --json`. Confirmed
+        response shape (live-tested, unlike `notebook create`/`source add` above which are
+        still best-effort): `{"answer": str, "references": [{"source_id": str,
+        "citation_number": int}, ...], ...}`. Missing `answer` is treated as a malformed
+        response (`nlm` only returns 0/no-error-JSON once it has a real answer to give).
+        """
+        stdout = await _run_nlm("notebook", "query", notebooklm_notebook_id, question, "--json")
+        payload = _parse_json(stdout, context=f"nlm notebook query {notebooklm_notebook_id!r}")
+
+        answer = payload.get("answer")
+        if not isinstance(answer, str) or not answer:
+            raise NotebookLMError(
+                f"nlm notebook query {notebooklm_notebook_id!r} exited 0 with --json but no "
+                f"answer was found in its output: {stdout!r}"
+            )
+
+        citations = [
+            QuerySourceCitation(
+                notebooklm_source_id=reference["source_id"],
+                citation_number=reference.get("citation_number"),
+            )
+            for reference in payload.get("references", [])
+            if isinstance(reference, dict) and isinstance(reference.get("source_id"), str)
+        ]
+        return NotebookQueryResult(answer=answer, citations=citations)
 
 
 async def _run_nlm(*args: str) -> str:

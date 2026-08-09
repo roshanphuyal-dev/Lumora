@@ -1,14 +1,15 @@
+import uuid
 from unittest.mock import patch
 
 from ai.orchestrator.orchestrator import OrchestrationError
-from ai.orchestrator.schemas import AIResponse, ProviderName
+from ai.orchestrator.schemas import AIResponse, Citation, ProviderName
 from ai.orchestrator.task_types import TaskType
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document, DocumentParseStatus
-from app.models.notebook import NotebookSourceIndexStatus
+from app.models.notebook import Notebook, NotebookSource, NotebookSourceIndexStatus
 from app.models.user import User
 
 
@@ -270,8 +271,140 @@ async def test_ask_returns_content_and_provider(client: AsyncClient, unique_emai
         )
 
     assert resp.status_code == 200
-    assert resp.json() == {"content": "A mole is 6.022e23 particles.", "provider": "gemini"}
+    assert resp.json() == {
+        "content": "A mole is 6.022e23 particles.",
+        "provider": "gemini",
+        "citations": [],
+    }
     mock_run_task.assert_awaited_once()
+
+
+async def test_ask_grounds_answer_in_notebooklm_when_a_source_is_indexed(
+    client: AsyncClient, db_session: AsyncSession, unique_email: str
+) -> None:
+    token = await _register_and_login(client, unique_email)
+    user_id = await _user_id(db_session, unique_email)
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "Biology"}, headers=_auth(token)
+    )
+    notebook_id = notebook.json()["id"]
+
+    done_document = await _create_document(
+        db_session, user_id, parse_status=DocumentParseStatus.DONE
+    )
+    with patch("app.api.v1.notebooks.index_notebook_source_task.delay"):
+        attach_resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/sources",
+            json={"document_id": str(done_document.id)},
+            headers=_auth(token),
+        )
+    source_id = attach_resp.json()["id"]
+
+    # NotebookLM indexing normally lands these via the Celery worker
+    # (`app/workers/notebook_tasks.py`) -- set directly since this test is only about the
+    # ask flow reading an already-indexed state, not the indexing pipeline itself.
+    notebook_row = await db_session.get(Notebook, uuid.UUID(notebook_id))
+    assert notebook_row is not None
+    notebook_row.notebooklm_notebook_id = "remote-nb-1"
+    source_row = await db_session.get(NotebookSource, uuid.UUID(source_id))
+    assert source_row is not None
+    source_row.indexing_status = NotebookSourceIndexStatus.INDEXED
+    await db_session.commit()
+
+    retrieval_response = AIResponse(
+        task_type=TaskType.NOTEBOOK_QUERY,
+        provider=ProviderName.NOTEBOOKLM,
+        content="Mitochondria is the powerhouse of the cell.",
+        citations=[Citation(source_id="nlm-src-1")],
+        metadata={},
+    )
+    teaching_response = AIResponse(
+        task_type=TaskType.TEACHING_EXPLANATION,
+        provider=ProviderName.GEMINI,
+        content="The mitochondria produces the cell's energy (ATP).",
+        citations=[Citation(source_id="nlm-src-1")],
+        metadata={},
+    )
+
+    with patch(
+        "app.services.notebook_service.run_task",
+        side_effect=[retrieval_response, teaching_response],
+    ) as mock_run_task:
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/ask",
+            json={"question": "What does the mitochondria do?"},
+            headers=_auth(token),
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["content"] == "The mitochondria produces the cell's energy (ATP)."
+    assert body["provider"] == "gemini"
+    assert body["citations"] == [{"source_id": "nlm-src-1", "chunk_id": None, "excerpt": None}]
+
+    assert mock_run_task.await_count == 2
+    retrieve_call, teach_call = mock_run_task.await_args_list
+    assert retrieve_call.args[0] == TaskType.NOTEBOOK_QUERY
+    assert retrieve_call.args[1].notebooklm_notebook_id == "remote-nb-1"
+    assert teach_call.args[0] == TaskType.TEACHING_EXPLANATION
+    assert teach_call.args[1].context == "Mitochondria is the powerhouse of the cell."
+    assert teach_call.args[1].citations == [Citation(source_id="nlm-src-1")]
+
+
+async def test_ask_falls_back_to_ungrounded_answer_when_notebooklm_retrieval_fails(
+    client: AsyncClient, db_session: AsyncSession, unique_email: str
+) -> None:
+    token = await _register_and_login(client, unique_email)
+    user_id = await _user_id(db_session, unique_email)
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "History"}, headers=_auth(token)
+    )
+    notebook_id = notebook.json()["id"]
+
+    done_document = await _create_document(
+        db_session, user_id, parse_status=DocumentParseStatus.DONE
+    )
+    with patch("app.api.v1.notebooks.index_notebook_source_task.delay"):
+        attach_resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/sources",
+            json={"document_id": str(done_document.id)},
+            headers=_auth(token),
+        )
+    source_id = attach_resp.json()["id"]
+
+    notebook_row = await db_session.get(Notebook, uuid.UUID(notebook_id))
+    assert notebook_row is not None
+    notebook_row.notebooklm_notebook_id = "remote-nb-1"
+    source_row = await db_session.get(NotebookSource, uuid.UUID(source_id))
+    assert source_row is not None
+    source_row.indexing_status = NotebookSourceIndexStatus.INDEXED
+    await db_session.commit()
+
+    teaching_response = AIResponse(
+        task_type=TaskType.TEACHING_EXPLANATION,
+        provider=ProviderName.GEMINI,
+        content="A generic, ungrounded answer.",
+        citations=[],
+        metadata={},
+    )
+
+    with patch(
+        "app.services.notebook_service.run_task",
+        side_effect=[OrchestrationError("nlm CLI unavailable"), teaching_response],
+    ) as mock_run_task:
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/ask",
+            json={"question": "What happened in 1066?"},
+            headers=_auth(token),
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["content"] == "A generic, ungrounded answer."
+    assert mock_run_task.await_count == 2
+    teach_call = mock_run_task.await_args_list[1]
+    assert teach_call.args[1].context == ""
 
 
 async def test_ask_404s_for_notebook_the_caller_does_not_own(

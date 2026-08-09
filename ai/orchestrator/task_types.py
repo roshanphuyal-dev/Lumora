@@ -14,5 +14,9 @@ class TaskType(enum.StrEnum):
     # Document-grounded / indexing → NotebookLM (Routing Logic step 1, docs/AI.md).
     DOCUMENT_INDEX = "document_index"
 
+    # Document-grounded question against a notebook's indexed sources → NotebookLM
+    # (Routing Logic step 1, docs/AI.md) — retrieval only, not teaching framing.
+    NOTEBOOK_QUERY = "notebook_query"
+
     # Teaching, explanation, pedagogical judgment → Gemini (Routing Logic step 2, docs/AI.md).
     TEACHING_EXPLANATION = "teaching_explanation"

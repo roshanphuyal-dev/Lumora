@@ -9,6 +9,9 @@ imports `run_task` from this module and never imports a provider SDK directly
 
 Phase 1 routing implemented here:
   - `TaskType.DOCUMENT_INDEX`       -> NotebookLM (Routing Logic step 1, docs/AI.md)
+  - `TaskType.NOTEBOOK_QUERY`       -> NotebookLM, retrieval only — Routing Logic step 1,
+    docs/AI.md. Callers needing a teaching-framed answer feed the result into
+    `TEACHING_EXPLANATION` as `context` themselves; this task type doesn't chain the two.
   - `TaskType.TEACHING_EXPLANATION` -> Gemini, falling back to OpenCode Zen on any Gemini
     failure (unavailable, rate-limited, daily quota exhausted) — Routing Logic step 2 + 5,
     docs/AI.md, ADR 0008.
@@ -24,13 +27,15 @@ from ai.notebooklm.client import NotebookLMClient, NotebookLMError
 from ai.opencode_zen.client import OpenCodeZenClient, OpenCodeZenError
 from ai.orchestrator.schemas import (
     AIResponse,
+    Citation,
     DocumentIndexRequest,
+    NotebookQueryRequest,
     ProviderName,
     TeachingExplanationRequest,
 )
 from ai.orchestrator.task_types import TaskType
 
-TaskRequest = DocumentIndexRequest | TeachingExplanationRequest
+TaskRequest = DocumentIndexRequest | NotebookQueryRequest | TeachingExplanationRequest
 
 
 class OrchestrationError(RuntimeError):
@@ -55,6 +60,11 @@ async def run_task(
         if not isinstance(request, DocumentIndexRequest):
             raise OrchestrationError("DOCUMENT_INDEX requires a DocumentIndexRequest.")
         return await _run_document_index(request, notebooklm_client)
+
+    if task_type is TaskType.NOTEBOOK_QUERY:
+        if not isinstance(request, NotebookQueryRequest):
+            raise OrchestrationError("NOTEBOOK_QUERY requires a NotebookQueryRequest.")
+        return await _run_notebook_query(request, notebooklm_client)
 
     if task_type is TaskType.TEACHING_EXPLANATION:
         if not isinstance(request, TeachingExplanationRequest):
@@ -84,6 +94,26 @@ async def _run_document_index(
             "notebooklm_source_id": result.notebooklm_source_id,
             "document_id": request.document_id,
         },
+    )
+
+
+async def _run_notebook_query(
+    request: NotebookQueryRequest, client: NotebookLMClient | None
+) -> AIResponse:
+    try:
+        result = await (client or NotebookLMClient()).query_notebook(
+            notebooklm_notebook_id=request.notebooklm_notebook_id,
+            question=request.question,
+        )
+    except NotebookLMError as exc:
+        raise OrchestrationError(str(exc)) from exc
+
+    return AIResponse(
+        task_type=TaskType.NOTEBOOK_QUERY,
+        provider=ProviderName.NOTEBOOKLM,
+        content=result.answer,
+        citations=[Citation(source_id=c.notebooklm_source_id) for c in result.citations],
+        metadata={},
     )
 
 
