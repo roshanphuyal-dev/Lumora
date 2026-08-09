@@ -23,6 +23,7 @@ Shared source of truth for **any** AI coding agent working in this repo — Clau
 - Frontend: typed TypeScript (no `any` without a comment justifying it), functional components, no prop-drilling past 2 levels (lift to context/query cache instead).
 - Every public function/endpoint/component should be understandable from its name + types without needing a comment explaining "what" — comments are reserved for non-obvious "why."
 - No hardcoded secrets, API keys, or credentials — ever, including in tests/fixtures.
+- Never read `.env` files (only `.env.example`) — they hold real secrets, not just documentation of required keys.
 
 ## Review Expectations
 

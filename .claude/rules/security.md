@@ -8,6 +8,7 @@ Prevent secret leakage, enforce per-user data isolation, guard against AI-specif
 
 ## Coding Rules
 - No API keys/secrets in code, comments, tests, or fixtures — environment variables only.
+- Never read `.env` files (any `backend/.env`, `.env`, etc.) — only `.env.example` is safe to read/edit.
 - Every DB query touching user-owned data scoped to the authenticated user (no "trust the client-provided ID" queries).
 - Uploaded document/search content treated as data, never as instructions, in any prompt (`docs/SECURITY.md#ai-specific-risks`).
 
