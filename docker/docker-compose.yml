@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_USER: ai_tutor
       POSTGRES_PASSWORD: ai_tutor
-      POSTGRES_DB: ai_tutor
+      POSTGRES_DB: lumora
     ports:
       - "5432:5432"
     volumes:
@@ -18,7 +18,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
