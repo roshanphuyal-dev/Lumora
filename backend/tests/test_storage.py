@@ -1,13 +1,30 @@
+from types import SimpleNamespace
+
 import pytest
 from storage3.exceptions import StorageApiError
 
-from app.core.config import get_settings
 from app.core.storage import (
     LocalFileStorage,
     SupabaseFileStorage,
     _is_not_found,
     get_file_storage,
 )
+
+
+def _unconfigured_settings() -> SimpleNamespace:
+    """Stand-in for `Settings` with no Supabase credentials set.
+
+    Storage-selection/credential-requirement behavior must not depend on whatever the
+    developer's real `backend/.env` happens to have in it (`app.core.storage.get_settings`
+    is monkeypatched below rather than relying on the real one) -- otherwise these tests
+    pass or fail based on local machine state instead of the code under test.
+    """
+    return SimpleNamespace(
+        supabase_url=None,
+        supabase_service_role_key=None,
+        supabase_storage_bucket="documents",
+        local_storage_root="./storage",
+    )
 
 
 async def test_local_file_storage_reads_bytes(tmp_path) -> None:
@@ -27,13 +44,13 @@ async def test_local_file_storage_raises_when_missing(tmp_path) -> None:
         await storage.download("missing.pdf")
 
 
-def test_get_file_storage_defaults_to_local_without_supabase_settings() -> None:
-    # The test environment's .env has no SUPABASE_* vars set (see .env.example).
-    assert get_settings().supabase_url is None
+def test_get_file_storage_defaults_to_local_without_supabase_settings(monkeypatch) -> None:
+    monkeypatch.setattr("app.core.storage.get_settings", _unconfigured_settings)
     assert isinstance(get_file_storage(), LocalFileStorage)
 
 
-def test_supabase_file_storage_requires_credentials() -> None:
+def test_supabase_file_storage_requires_credentials(monkeypatch) -> None:
+    monkeypatch.setattr("app.core.storage.get_settings", _unconfigured_settings)
     with pytest.raises(ValueError):
         SupabaseFileStorage(url=None, service_role_key=None, bucket="documents")
 

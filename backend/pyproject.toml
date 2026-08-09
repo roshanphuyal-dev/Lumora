@@ -11,6 +11,7 @@ dependencies = [
     "asyncpg>=0.30",
     "alembic>=1.14",
     "pydantic-settings>=2.6",
+    "python-dotenv>=1.0",
     "pyjwt>=2.10",
     "python-multipart>=0.0.17",
     "google-auth>=2.36",

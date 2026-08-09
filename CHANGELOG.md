@@ -26,4 +26,5 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 - _nothing yet_
 
 ### Fixed
-- _nothing yet_
+- `backend/app/core/config.py` now calls `load_dotenv()` at import time so `backend/.env` populates the real process environment, not just the `Settings` pydantic model — `ai/gemini/client.py` and `ai/opencode_zen/client.py` read their API keys via `os.environ.get(...)` directly and previously wouldn't see them unless exported in the shell.
+- `test_storage.py`'s Supabase-credential tests no longer depend on the developer's real `backend/.env` having no `SUPABASE_*` values set — they now monkeypatch `get_settings` to an explicit unconfigured stub.

@@ -25,6 +25,7 @@ dependencies = [
     { name = "pypdf" },
     { name = "pytesseract" },
     { name = "python-docx" },
+    { name = "python-dotenv" },
     { name = "python-multipart" },
     { name = "python-pptx" },
     { name = "requests" },
@@ -57,6 +58,7 @@ requires-dist = [
     { name = "pypdf", specifier = ">=5.1" },
     { name = "pytesseract", specifier = ">=0.3.13" },
     { name = "python-docx", specifier = ">=1.1.2" },
+    { name = "python-dotenv", specifier = ">=1.0" },
     { name = "python-multipart", specifier = ">=0.0.17" },
     { name = "python-pptx", specifier = ">=1.0.2" },
     { name = "requests", specifier = ">=2.34.2" },
@@ -851,12 +853,14 @@ version = "0.1.0"
 source = { editable = "../ai" }
 dependencies = [
     { name = "google-genai" },
+    { name = "httpx" },
     { name = "pydantic" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "google-genai", specifier = ">=2.14.0" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "pydantic", specifier = ">=2.13.4" },
 ]
 
