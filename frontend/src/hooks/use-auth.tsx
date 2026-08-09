@@ -1,5 +1,5 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react"
-import { clearTokens, getAccessToken, setTokens } from "@/lib/token-storage"
+import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from "react"
+import { clearTokens, getAccessToken, setTokens, subscribe } from "@/lib/token-storage"
 
 interface AuthContextValue {
   isAuthenticated: boolean
@@ -10,18 +10,19 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(() => getAccessToken() !== null)
+  // Single source of truth is token-storage itself, not local state -- a silent refresh
+  // or a failed-refresh logout (lib/api.ts) mutates tokens outside of any signIn/signOut
+  // call, and this needs to reflect that too, not just explicit auth actions.
+  const isAuthenticated = useSyncExternalStore(subscribe, () => getAccessToken() !== null)
 
   const value = useMemo<AuthContextValue>(
     () => ({
       isAuthenticated,
-      signIn: (accessToken, refreshToken) => {
+      signIn: (accessToken: string, refreshToken: string) => {
         setTokens({ accessToken, refreshToken })
-        setIsAuthenticated(true)
       },
       signOut: () => {
         clearTokens()
-        setIsAuthenticated(false)
       },
     }),
     [isAuthenticated],

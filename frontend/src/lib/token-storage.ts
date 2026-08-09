@@ -21,9 +21,25 @@ export function getRefreshToken(): string | null {
 export function setTokens({ accessToken, refreshToken }: TokenPair): void {
   localStorage.setItem(ACCESS_TOKEN_KEY, accessToken)
   localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
+  notify()
 }
 
 export function clearTokens(): void {
   localStorage.removeItem(ACCESS_TOKEN_KEY)
   localStorage.removeItem(REFRESH_TOKEN_KEY)
+  notify()
+}
+
+// api.ts mutates tokens outside of React (silent refresh, clearing on a failed refresh) --
+// AuthProvider (hooks/use-auth.tsx) subscribes via useSyncExternalStore so isAuthenticated
+// stays correct even when the change didn't come from signIn/signOut.
+const listeners = new Set<() => void>()
+
+export function subscribe(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+function notify(): void {
+  for (const listener of listeners) listener()
 }

@@ -1,4 +1,4 @@
-import { clearTokens, getAccessToken } from "@/lib/token-storage"
+import { clearTokens, getAccessToken, getRefreshToken, setTokens } from "@/lib/token-storage"
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1"
 
@@ -11,33 +11,78 @@ export class ApiError extends Error {
   }
 }
 
-// No refresh-token retry loop yet: a 401 clears tokens and the next protected
-// route render redirects to /login (RequireAuth). Silent access-token refresh
-// is a follow-up once more than one protected page exists to justify it.
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  return handleResponse<T>(
-    await fetch(`${API_BASE_URL}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...authHeader(),
-        ...init?.headers,
-      },
-    }),
-  )
+  return requestWithRefresh<T>(path, () => ({
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeader(),
+      ...init?.headers,
+    },
+  }))
 }
 
 // Multipart upload: no Content-Type header -- the browser sets it (with the
 // multipart boundary) from the FormData body. Setting it manually breaks the
 // boundary and the backend can't parse the request.
 export async function apiFetchForm<T>(path: string, formData: FormData): Promise<T> {
-  return handleResponse<T>(
-    await fetch(`${API_BASE_URL}${path}`, {
+  return requestWithRefresh<T>(path, () => ({
+    method: "POST",
+    headers: authHeader(),
+    body: formData,
+  }))
+}
+
+// On a 401, try a silent refresh once and retry the original request before giving up --
+// an access token expires in 30 minutes (backend/.env ACCESS_TOKEN_EXPIRE_MINUTES) and a
+// refresh token is already issued/stored on login, so a hard logout on every expiry was
+// pure friction. `buildInit` is a factory rather than a fixed value because it must read
+// the (possibly just-refreshed) access token fresh on the retry, not the one captured
+// before the refresh happened.
+async function requestWithRefresh<T>(path: string, buildInit: () => RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, buildInit())
+
+  if (response.status === 401) {
+    const refreshed = await refreshAccessToken()
+    if (refreshed) {
+      return handleResponse<T>(await fetch(`${API_BASE_URL}${path}`, buildInit()))
+    }
+    clearTokens()
+  }
+
+  return handleResponse<T>(response)
+}
+
+// Concurrent 401s (e.g. several queries in flight when the token expires) share one
+// refresh call instead of each firing their own -- the second+ caller awaits the same
+// promise rather than racing another refresh with the same (about-to-be-rotated) token.
+let refreshPromise: Promise<boolean> | null = null
+
+function refreshAccessToken(): Promise<boolean> {
+  const refreshToken = getRefreshToken()
+  if (!refreshToken) return Promise.resolve(false)
+
+  refreshPromise ??= performRefresh(refreshToken).finally(() => {
+    refreshPromise = null
+  })
+  return refreshPromise
+}
+
+async function performRefresh(refreshToken: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
       method: "POST",
-      headers: authHeader(),
-      body: formData,
-    }),
-  )
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    })
+    if (!response.ok) return false
+
+    const tokens = (await response.json()) as { access_token: string; refresh_token: string }
+    setTokens({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token })
+    return true
+  } catch {
+    return false
+  }
 }
 
 function authHeader(): Record<string, string> {
@@ -47,7 +92,6 @@ function authHeader(): Record<string, string> {
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    if (response.status === 401) clearTokens()
     throw new ApiError(response.status, await extractErrorMessage(response))
   }
 
