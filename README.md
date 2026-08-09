@@ -32,27 +32,9 @@ Details: [`docs/TECH_STACK.md`](docs/TECH_STACK.md). Decision rationale: [`docs/
 
 ## Installation
 
-Prerequisites: Python 3.12+, [`uv`](https://github.com/astral-sh/uv), Node 20+, [`pnpm`](https://pnpm.io), Docker, a PostgreSQL instance (or Supabase project) with `pgvector` enabled.
+Prerequisites: Python 3.12+, [`uv`](https://github.com/astral-sh/uv), Node 20+, [`pnpm`](https://pnpm.io), Docker.
 
-```bash
-git clone <repo-url> ai-tutor && cd ai-tutor
-
-# Backend
-cd backend
-uv sync
-cp .env.example .env   # fill in DB, Gemini, NotebookLM, search API keys
-uv run alembic upgrade head
-uv run uvicorn app.main:app --reload
-
-# Frontend (new terminal)
-cd frontend
-pnpm install
-cp .env.example .env
-pnpm dev
-
-# Or: full stack via Docker
-docker compose up
-```
+Full step-by-step (env vars, the four processes you need running, common gotchas): **[`START.md`](START.md)**.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for local dev workflow and [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for production setup.
 
