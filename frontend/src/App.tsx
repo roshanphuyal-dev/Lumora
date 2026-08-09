@@ -1,10 +1,11 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom"
+import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { AppShell } from "@/components/layout/AppShell"
 import { RequireAuth } from "@/components/layout/RequireAuth"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { RegisterPage } from "@/pages/RegisterPage"
+import { NotebooksListPage } from "@/pages/NotebooksListPage"
 import { NotebookDetailPage } from "@/pages/NotebookDetailPage"
 import { AuthProvider } from "@/hooks/use-auth"
 import { ApiError } from "@/lib/api"
@@ -22,6 +23,18 @@ const queryClient = new QueryClient({
   },
 })
 
+// Every protected page shares the same RequireAuth + AppShell wrapper -- nested routes with
+// an Outlet instead of repeating both on every <Route>, now that there are three of them.
+function ProtectedLayout() {
+  return (
+    <RequireAuth>
+      <AppShell>
+        <Outlet />
+      </AppShell>
+    </RequireAuth>
+  )
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -30,26 +43,11 @@ function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
-            <Route
-              path="/"
-              element={
-                <RequireAuth>
-                  <AppShell>
-                    <DashboardPage />
-                  </AppShell>
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/notebooks/:id"
-              element={
-                <RequireAuth>
-                  <AppShell>
-                    <NotebookDetailPage />
-                  </AppShell>
-                </RequireAuth>
-              }
-            />
+            <Route element={<ProtectedLayout />}>
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/notebooks" element={<NotebooksListPage />} />
+              <Route path="/notebooks/:id" element={<NotebookDetailPage />} />
+            </Route>
           </Routes>
         </BrowserRouter>
       </AuthProvider>

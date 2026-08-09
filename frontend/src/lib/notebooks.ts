@@ -49,3 +49,25 @@ export function attachSource(notebookId: string, documentId: string): Promise<No
     body: JSON.stringify({ document_id: documentId }),
   })
 }
+
+export function deleteNotebook(notebookId: string): Promise<void> {
+  return apiFetch<void>(`/notebooks/${notebookId}`, { method: "DELETE" })
+}
+
+export function detachSource(notebookId: string, sourceId: string): Promise<void> {
+  return apiFetch<void>(`/notebooks/${notebookId}/sources/${sourceId}`, { method: "DELETE" })
+}
+
+export interface AskResponse {
+  content: string
+  provider: string
+}
+
+// Not RAG-grounded yet (docs/ROADMAP.md Phase 4) -- a plain teaching-explanation call,
+// no citations to show (backend/app/schemas/notebook.py:NotebookAskResponse).
+export function askNotebook(notebookId: string, question: string): Promise<AskResponse> {
+  return apiFetch<AskResponse>(`/notebooks/${notebookId}/ask`, {
+    method: "POST",
+    body: JSON.stringify({ question }),
+  })
+}

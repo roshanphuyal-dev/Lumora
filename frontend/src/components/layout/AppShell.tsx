@@ -6,9 +6,9 @@ import { useAuth } from "@/hooks/use-auth"
 import { Button } from "@/components/ui/button"
 
 const NAV_ITEMS = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, disabled: false },
-  { to: "/notebooks", label: "Notebooks", icon: NotebookText, disabled: true },
-  { to: "/settings", label: "Settings", icon: Settings, disabled: true },
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, disabled: false, end: true },
+  { to: "/notebooks", label: "Notebooks", icon: NotebookText, disabled: false, end: false },
+  { to: "/settings", label: "Settings", icon: Settings, disabled: true, end: false },
 ] as const
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -22,19 +22,45 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-svh flex-col bg-background text-foreground md:flex-row">
-      {/* Mobile: wordmark-only top bar. Nav collapses to a drawer once Notebooks/Settings
-          are real routes -- until then there is nothing behind them worth spending a
-          drawer interaction on. */}
+      {/* Mobile: wordmark + the two real routes as icon buttons, no drawer. Settings stays
+          out entirely until it's a real route -- nothing to spend the icon slot on yet. */}
       <header className="flex items-center justify-between border-b border-border px-4 py-3 md:hidden">
         <span className="font-serif text-lg font-semibold text-foreground">Lumora</span>
-        <Button variant="ghost" size="icon" aria-label="Log out" onClick={handleSignOut}>
-          <LogOut className="size-4" aria-hidden="true" />
-        </Button>
+        <nav className="flex items-center gap-1">
+          <NavLink
+            to="/"
+            end
+            aria-label="Dashboard"
+            className={({ isActive }) =>
+              cn(
+                "flex items-center justify-center rounded-md p-2",
+                isActive ? "text-primary" : "text-foreground/70",
+              )
+            }
+          >
+            <LayoutDashboard className="size-4" aria-hidden="true" />
+          </NavLink>
+          <NavLink
+            to="/notebooks"
+            aria-label="Notebooks"
+            className={({ isActive }) =>
+              cn(
+                "flex items-center justify-center rounded-md p-2",
+                isActive ? "text-primary" : "text-foreground/70",
+              )
+            }
+          >
+            <NotebookText className="size-4" aria-hidden="true" />
+          </NavLink>
+          <Button variant="ghost" size="icon" aria-label="Log out" onClick={handleSignOut}>
+            <LogOut className="size-4" aria-hidden="true" />
+          </Button>
+        </nav>
       </header>
       <aside className="hidden w-60 shrink-0 flex-col border-r border-border px-3 py-4 md:flex">
         <div className="px-2 pb-6 font-serif text-lg font-semibold text-foreground">Lumora</div>
         <nav className="flex flex-1 flex-col gap-1">
-          {NAV_ITEMS.map(({ to, label, icon: Icon, disabled }) =>
+          {NAV_ITEMS.map(({ to, label, icon: Icon, disabled, end }) =>
             disabled ? (
               <span
                 key={to}
@@ -51,6 +77,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <NavLink
                 key={to}
                 to={to}
+                end={end}
                 className={({ isActive }) =>
                   cn(
                     "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium transition-colors",

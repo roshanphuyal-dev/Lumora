@@ -51,6 +51,9 @@ async function handleResponse<T>(response: Response): Promise<T> {
     throw new ApiError(response.status, await extractErrorMessage(response))
   }
 
+  // 204 No Content (every DELETE endpoint) has no body -- .json() would throw on it.
+  if (response.status === 204) return undefined as T
+
   return response.json() as Promise<T>
 }
 

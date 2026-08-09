@@ -124,12 +124,18 @@ Rounded, not sharp: base radius `0.5rem` (8px), scaling to `0.7rem` (11.2px) for
 
 ### Navigation (Sidebar)
 - **Style:** icon (16px, Lucide, single stroke weight) + label, Inter 14px medium.
-- **Active state:** Signal Emerald text on a 10%-opacity emerald background, rounded `0.4rem`.
-- **Disabled state (not-yet-built routes):** Quiet Gray text at reduced opacity, plus a small uppercase "Soon" badge — never hidden entirely, so the product's near-term shape stays visible.
-- **Mobile:** sidebar hidden below `md`; replaced by a wordmark-only top bar (see Layout).
+- **Active state:** Signal Emerald text on a 10%-opacity emerald background, rounded `0.4rem`. Uses React Router `NavLink`'s `end` prop on the root route (`/`) only — without it, every route would match `/` as a prefix and Dashboard would read active everywhere.
+- **Disabled state (not-yet-built routes):** Quiet Gray text at reduced opacity, plus a small uppercase "Soon" badge — never hidden entirely, so the product's near-term shape stays visible. Only "Settings" is still in this state; "Notebooks" is a real route.
+- **Mobile:** sidebar hidden below `md`; replaced by a top bar with the wordmark plus each *real* route as an icon-only link (no drawer, no hidden routes — a route not worth an icon isn't shown at all on mobile rather than tucked behind a menu).
 
 ### Ledger Row (signature component)
-The pattern for any "not yet available" content: a single bordered container, one row per item (icon + label + "Soon" badge), rows divided by 1px hairline separators — never separate same-size cards. Established directly in response to the first build's mistake (see Overview); this is now the standard treatment for all inert/placeholder content project-wide, not specific to the dashboard. Reused as-is for the disabled "Continue with Google" control on the auth pages.
+A single bordered container, one row per item, rows divided by 1px hairline separators — never separate same-size cards. Originated as the fix for "not yet available" content (icon + label + "Soon" badge — see Overview), but the same structure is now the general list pattern project-wide: real populated lists (notebooks, sources) use it too (icon + label + a trailing date/status instead of "Soon"), sharing one component (`NotebookList`) between the dashboard's compact view and the full `/notebooks` list page rather than duplicating the states.
+
+### Destructive Actions
+No modal confirmation dialogs (`.claude/rules/ui.md`). A destructive action (delete notebook) is a two-step inline confirm: the button's own label/position becomes "Delete this notebook?" plus a `destructive`-variant "Confirm" and a plain-text "Cancel", collapsing back on cancel. A less destructive, easily-reversible action (removing one source from a notebook) skips the confirm step entirely — a small `X` icon button, immediate.
+
+### Answer Content (Markdown)
+AI-generated answers (`AskNotebookSection.tsx`) render as real Markdown (`react-markdown`), not raw text — headings, bold, lists, and tables need actual formatting to be readable, and shipping the literal `**`/`##`/`|` syntax to the page is a defect, not an acceptable simplification.
 
 ### Auth Layout
 Unauthenticated routes (`/login`, `/register`) do not inherit the sidebar shell — there is nothing to navigate to yet. A single centered column (`max-w-sm`), wordmark above the form, no imagery: the same Restrained-strategy discipline as the dashboard, not a Persuade-mode marketing split. Errors render as `text-destructive` copy above the submit button, never a toast or modal (`.claude/rules/ui.md`: no modal interruptions).
@@ -141,8 +147,11 @@ Unauthenticated routes (`/login`, `/register`) do not inherit the sidebar shell 
 - **Do** render not-yet-available features as a single bordered ledger (icon + label + "Soon" per row), never as a grid of identical cards.
 - **Do** self-host Source Serif 4 and Inter via `@fontsource-variable` — never fall back to a system font as the display face.
 - **Do** keep Confirmed Green (success states: indexed sources, future quiz feedback) visually distinct from Signal Emerald.
+- **Do** render AI-generated answer content as real Markdown, not raw text.
+- **Do** confirm a destructive action with an inline two-step control, never a modal.
 
 ### Don't:
 - **Don't** stack a border and a shadow on the same surface — one containment treatment per element.
 - **Don't** invent numbers, streaks, or progress data before the backend can back them — an honest "Soon" label beats a fabricated stat.
+- **Don't** put a low-stakes, reversible action (removing one source) behind the same confirm step as a destructive one (deleting a notebook) — match the friction to the actual cost of a mistake.
 - **Don't** use icon-plus-heading-plus-text cards as a page scaffold for a set of same-weight items — that's the rejected pattern this system exists to avoid repeating.
