@@ -113,6 +113,7 @@ Rounded, not sharp: base radius `0.5rem` (8px), scaling to `0.7rem` (11.2px) for
 - **Shape:** `0.4rem` radius (`rounded-md`).
 - **Primary:** Signal Emerald background, Paper text, `0.5rem 1rem` padding. Used for exactly one action per view.
 - **Hover / Focus:** background darkens slightly; focus-visible gets a ring in the accent color.
+- **Multi-step async action (e.g. upload):** the button's own label swaps to a present-participle stage name ("Uploading…", "Reading your file…") and the button disables — never a separate spinner element or progress bar. A failure renders as `text-destructive` copy below the button plus a text "Try again" link that resets the action, never a toast/modal (`.claude/rules/ui.md`: no modal interruptions).
 
 ### Cards / Containers
 - **Corner Style:** `0.7rem` (`rounded-xl`).
