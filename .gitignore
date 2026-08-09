@@ -22,3 +22,6 @@ dist/
 
 # Docker
 docker/postgres_data/
+
+# Impeccable design-skill scratch output (review screenshots, not source)
+.impeccable/

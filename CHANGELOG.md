@@ -22,6 +22,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 - Real NotebookLM CLI integration (`ai/notebooklm/client.py`) replacing the always-fails stub: shells out to the `nlm` CLI (`notebooklm-mcp-cli`) to create/reuse a notebook's remote NotebookLM id and upload/index source documents. Requires a one-time interactive `nlm login` per machine running the Celery worker (`docs/DEPLOYMENT.md`); not yet verified against a live authenticated `nlm` profile (`docs/DECISIONS.md#known-debt-not-yet-adr-worthy`).
 - `notebooks.notebooklm_notebook_id` column + migration, caching the remote NotebookLM notebook id per `Notebook`.
 - OpenCode Zen provider client (`ai/opencode_zen/client.py`) and Gemini <-> OpenCode Zen fallback for `TaskType.TEACHING_EXPLANATION` (`ai/orchestrator/orchestrator.py`) — if Gemini is unavailable, rate-limited, or its daily quota is exhausted, the orchestrator falls back to a free OpenCode Zen model, and vice versa (ADR 0008).
+- Frontend scaffold (`frontend/`): Vite + React + TypeScript, Tailwind CSS v4, shadcn/ui (new-york style), React Router, TanStack Query, Framer Motion, React Hook Form. Design tokens (emerald accent, zinc neutral, Source Serif 4 + Inter, dark mode) wired per `docs/UI_UX.md`.
+- Dashboard shell (`frontend/src/pages/DashboardPage.tsx`, `frontend/src/components/layout/AppShell.tsx`): sidebar app-shell, honest Phase-1-scoped empty states (upload CTA, empty notebooks list), and a quiet "coming soon" ledger for weak-topics/progress/streaks sections that have no real backend yet. `DESIGN.md` records the resulting design system.
 
 ### Changed
 - _nothing yet_

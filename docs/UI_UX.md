@@ -19,13 +19,13 @@ Design and interaction reference: visual language, component conventions, access
 ## Structure
 
 ### Design Tokens
-Defined in Tailwind config + shadcn theme (`frontend/tailwind.config.ts` once implemented) — this doc references the *intent* behind them, not a duplicate value table that will drift from the actual config.
-- Color: neutral base + one accent for primary actions + semantic colors (success/warning/error) for quiz feedback and progress indicators.
-- Typography: one serif/reading-optimized font for long-form study content (notes, study guides), one UI sans-serif for chrome/controls — legibility for extended reading sessions is a first-class concern here, more than in a typical dashboard app.
-- Spacing/radius: shadcn defaults unless a specific product need overrides them (record as ADR if so).
+Defined in `frontend/src/index.css` (Tailwind v4 CSS-first `@theme`/`:root` config, not a `tailwind.config.ts` — see `docs/DECISIONS.md`) — this doc references the *intent* behind them. The shipped tokens, extracted from actual code, are recorded in [`DESIGN.md`](../DESIGN.md); update that file (via `$impeccable document`), not this one, when the implementation's tokens change.
+- **Color**: neutral base (`zinc`) + one accent (`emerald`, for primary actions/branding) + semantic colors for quiz feedback/progress (`green` for success, `amber` for warning, `red`/`rose` for error). Success intentionally uses a *different* green shade than the `emerald` accent — an emerald "Submit" button next to an emerald "Correct!" badge would blur the distinction between "this is clickable" and "this is feedback"; kept apart even though both read as "green" at a glance. Reinforced by `.claude/rules/ui.md`'s icon/text-pairing rule regardless.
+- **Typography**: Source Serif 4 (reading-optimized, variable weight) for long-form study content (notes, study guides, flashcard backs); Inter (variable weight) for UI chrome/controls/nav. Both self-hosted via `next/font`-equivalent (Vite: `@fontsource` packages) rather than a runtime Google Fonts request, to avoid a render-blocking external call.
+- **Spacing/radius**: shadcn "new-york" style (tighter, less rounded than "default") — better fit for a reading/content-dense app than the more playful "default" style. Base radius `0.5rem`.
 
 ### Dark Mode
-Supported from Phase 1 — students study at all hours; respect `prefers-color-scheme` with a manual override toggle, persisted per user.
+Supported from Phase 1 — students study at all hours; respect `prefers-color-scheme` by default, with a manual override toggle (`class` strategy on `<html>`) persisted to `localStorage` and, once user profiles exist, synced as a user preference server-side.
 
 ### Accessibility
 - WCAG 2.1 AA as the baseline target.
@@ -41,5 +41,4 @@ Supported from Phase 1 — students study at all hours; respect `prefers-color-s
 ### Component Conventions
 shadcn/ui as the base component library — extend via composition, don't fork shadcn primitives unless there's no other option (record as ADR if forking becomes necessary).
 
-<!-- TODO: finalize color palette + typography once first design pass happens -->
 <!-- TODO: add Storybook or equivalent component catalogue once component count grows -->
