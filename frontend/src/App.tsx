@@ -5,9 +5,22 @@ import { RequireAuth } from "@/components/layout/RequireAuth"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { RegisterPage } from "@/pages/RegisterPage"
+import { NotebookDetailPage } from "@/pages/NotebookDetailPage"
 import { AuthProvider } from "@/hooks/use-auth"
+import { ApiError } from "@/lib/api"
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // TanStack Query's default retries any failure up to 3 times with backoff --
+      // a 404/403 won't succeed on retry, so that just leaves the UI stuck on a
+      // loading state for several extra seconds before showing the real error.
+      retry: (failureCount, error) =>
+        !(error instanceof ApiError && error.status >= 400 && error.status < 500) &&
+        failureCount < 3,
+    },
+  },
+})
 
 function App() {
   return (
@@ -23,6 +36,16 @@ function App() {
                 <RequireAuth>
                   <AppShell>
                     <DashboardPage />
+                  </AppShell>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/notebooks/:id"
+              element={
+                <RequireAuth>
+                  <AppShell>
+                    <NotebookDetailPage />
                   </AppShell>
                 </RequireAuth>
               }

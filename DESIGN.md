@@ -75,7 +75,7 @@ Restrained strategy: a zinc neutral base carries the page, one emerald accent ma
 ### Named Rules
 **The One Accent Rule.** Signal Emerald appears on exactly one interactive element per view (the primary action) plus the active nav state. It is never used for card backgrounds, section headers, or decoration — its rarity is what makes it read as "do this."
 
-**The Undistinguished Green Rule.** Confirmed Green (`oklch(0.627 0.194 149.214)`) is reserved for future quiz/evaluation "correct" feedback and must stay a visibly different hue from Signal Emerald — a correct-answer badge sitting next to a primary button must never look like the same color choice twice.
+**The Undistinguished Green Rule.** Confirmed Green (`oklch(0.627 0.194 149.214)`) marks real "succeeded" states only (a notebook source's `indexed` status; later, quiz/evaluation "correct" feedback) and must stay a visibly different hue from Signal Emerald — a success badge sitting next to a primary button must never look like the same color choice twice.
 
 ## Typography
 
@@ -140,7 +140,7 @@ Unauthenticated routes (`/login`, `/register`) do not inherit the sidebar shell 
 - **Do** use Signal Emerald on exactly one primary action per view, plus the active nav state — nowhere else.
 - **Do** render not-yet-available features as a single bordered ledger (icon + label + "Soon" per row), never as a grid of identical cards.
 - **Do** self-host Source Serif 4 and Inter via `@fontsource-variable` — never fall back to a system font as the display face.
-- **Do** keep Confirmed Green (future quiz feedback) visually distinct from Signal Emerald.
+- **Do** keep Confirmed Green (success states: indexed sources, future quiz feedback) visually distinct from Signal Emerald.
 
 ### Don't:
 - **Don't** stack a border and a shadow on the same surface — one containment treatment per element.

@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom"
 import { NotebookText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -41,7 +42,10 @@ export function NotebooksSection() {
           {data.items.map((notebook, index) => (
             <div key={notebook.id}>
               {index > 0 && <Separator />}
-              <div className="flex items-center gap-2 px-3 py-2.5">
+              <Link
+                to={`/notebooks/${notebook.id}`}
+                className="flex items-center gap-2 px-3 py-2.5 transition-colors hover:bg-accent"
+              >
                 <NotebookText className="size-4 text-muted-foreground" aria-hidden="true" />
                 <span className="text-sm text-foreground">{notebook.name}</span>
                 <span className="ml-auto text-xs text-muted-foreground">
@@ -50,7 +54,7 @@ export function NotebooksSection() {
                     day: "numeric",
                   })}
                 </span>
-              </div>
+              </Link>
             </div>
           ))}
         </div>

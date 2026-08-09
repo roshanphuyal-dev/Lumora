@@ -15,15 +15,25 @@ export interface Page<T> {
   offset: number
 }
 
+export type IndexingStatus = "pending" | "indexed" | "failed"
+
 export interface NotebookSource {
   id: string
   document_id: string
-  indexing_status: string
+  indexing_status: IndexingStatus
   created_at: string
+}
+
+export interface NotebookDetail extends Notebook {
+  sources: NotebookSource[]
 }
 
 export function fetchNotebooks(): Promise<Page<Notebook>> {
   return apiFetch<Page<Notebook>>("/notebooks?limit=20&offset=0")
+}
+
+export function fetchNotebook(notebookId: string): Promise<NotebookDetail> {
+  return apiFetch<NotebookDetail>(`/notebooks/${notebookId}`)
 }
 
 export function createNotebook(name: string): Promise<Notebook> {
