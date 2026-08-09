@@ -40,17 +40,33 @@ export async function apiFetchForm<T>(path: string, formData: FormData): Promise
 // the (possibly just-refreshed) access token fresh on the retry, not the one captured
 // before the refresh happened.
 async function requestWithRefresh<T>(path: string, buildInit: () => RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, buildInit())
+  const response = await fetchOrThrow(path, buildInit())
 
   if (response.status === 401) {
     const refreshed = await refreshAccessToken()
     if (refreshed) {
-      return handleResponse<T>(await fetch(`${API_BASE_URL}${path}`, buildInit()))
+      return handleResponse<T>(await fetchOrThrow(path, buildInit()))
     }
     clearTokens()
   }
 
   return handleResponse<T>(response)
+}
+
+// fetch() rejects (TypeError, not an HTTP response) when the server can't be reached at
+// all -- backend not running, wrong port, CORS blocked. That's indistinguishable from any
+// other thrown error to `error instanceof ApiError` checks in the UI, so it was rendering
+// as a generic "Something went wrong" with no way to tell "your code has a bug" from "the
+// backend isn't running" apart. status 0 (no real HTTP status applies) marks this case.
+async function fetchOrThrow(path: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(`${API_BASE_URL}${path}`, init)
+  } catch {
+    throw new ApiError(
+      0,
+      `Can't reach the server at ${API_BASE_URL} — check that the backend is running (see START.md).`,
+    )
+  }
 }
 
 // Concurrent 401s (e.g. several queries in flight when the token expires) share one
