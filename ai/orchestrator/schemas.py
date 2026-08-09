@@ -23,6 +23,7 @@ class ProviderName(enum.StrEnum):
 
     NOTEBOOKLM = "notebooklm"
     GEMINI = "gemini"
+    OPENCODE_ZEN = "opencode_zen"
 
 
 class Citation(BaseModel):

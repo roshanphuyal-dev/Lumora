@@ -21,6 +21,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 - Real Supabase Storage integration (`backend/app/core/storage.py`: `SupabaseFileStorage`, via `supabase-py`) — `get_file_storage()` uses it when `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` are set, otherwise falls back to the local-disk `FileStorage` stopgap (dev/test default).
 - Real NotebookLM CLI integration (`ai/notebooklm/client.py`) replacing the always-fails stub: shells out to the `nlm` CLI (`notebooklm-mcp-cli`) to create/reuse a notebook's remote NotebookLM id and upload/index source documents. Requires a one-time interactive `nlm login` per machine running the Celery worker (`docs/DEPLOYMENT.md`); not yet verified against a live authenticated `nlm` profile (`docs/DECISIONS.md#known-debt-not-yet-adr-worthy`).
 - `notebooks.notebooklm_notebook_id` column + migration, caching the remote NotebookLM notebook id per `Notebook`.
+- OpenCode Zen provider client (`ai/opencode_zen/client.py`) and Gemini <-> OpenCode Zen fallback for `TaskType.TEACHING_EXPLANATION` (`ai/orchestrator/orchestrator.py`) — if Gemini is unavailable, rate-limited, or its daily quota is exhausted, the orchestrator falls back to a free OpenCode Zen model, and vice versa (ADR 0008).
 
 ### Changed
 - _nothing yet_
