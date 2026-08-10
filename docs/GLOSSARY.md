@@ -15,8 +15,8 @@ Canonical definitions for domain terms used across `docs/` and the codebase. Thi
 
 ## Terms
 
-- **Document** — a single uploaded file (PDF/DOCX/PPTX/image) before it's associated with any Notebook. Owned by a user.
-- **Source** — a Document once it has been added to a Notebook; the Notebook-scoped reference to the underlying Document, indexed by NotebookLM.
+- **Document** — a single uploaded file (PDF/DOCX/PPTX/image) or linked URL, before it's associated with any Notebook. Owned by a user.
+- **Source** — a Document once it has been added to a Notebook; the Notebook-scoped reference to the underlying Document, indexed by NotebookLM. **Resource** is the UI-facing label for the same thing (the notebook detail page's "Resources" tab) — use Source/Document in code and docs, Resource only in user-facing copy.
 - **Notebook** — a knowledge-base container grouping related Sources for multi-document reasoning, retrieval, and citation (`docs/DATABASE.md#core-tables`).
 - **Chunk** — a semantically coherent slice of a Source's extracted text, the unit that gets embedded and retrieved (`docs/AI.md#rag-design`).
 - **Embedding** — the vector representation of a Chunk, stored in `pgvector` (`docs/DATABASE.md`).

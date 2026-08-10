@@ -87,6 +87,65 @@ async def test_index_notebook_source_persists_remote_id_and_cleans_temp_file(
     assert not temp_paths[0].exists()
 
 
+async def test_index_notebook_source_writes_extracted_text_for_link_backed_document(
+    db_session: AsyncSession,
+) -> None:
+    """A link-backed Document has no `storage_path` to download (see
+    `app/models/document.py`'s check constraint) -- indexing must fall back to
+    its already-extracted text instead of calling `FileStorage.download`.
+    """
+    user = User(email=f"{uuid.uuid4().hex[:12]}@example.com", full_name="Test User")
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    document = Document(
+        uploaded_by=user.id,
+        filename="https://example.com/article",
+        source_url="https://example.com/article",
+        mime_type="text/html",
+        file_type="url",
+        parse_status=DocumentParseStatus.DONE,
+        extracted_text="the article's extracted text",
+    )
+    notebook = Notebook(owner_id=user.id, name="Biology 101")
+    db_session.add_all([document, notebook])
+    await db_session.commit()
+    await db_session.refresh(document)
+    await db_session.refresh(notebook)
+
+    source = NotebookSource(notebook_id=notebook.id, document_id=document.id)
+    db_session.add(source)
+    await db_session.commit()
+    await db_session.refresh(source)
+
+    fake_storage = AsyncMock()
+    mock_notebooklm_client = AsyncMock()
+    mock_notebooklm_client.ensure_remote_notebook.return_value = "nb-remote-3"
+
+    async def _assert_temp_file(*args: object, **_kwargs: object) -> None:
+        request = args[1]
+        file_path = Path(request.file_path)
+        assert file_path.suffix == ".txt"
+        assert file_path.read_text() == "the article's extracted text"
+
+    with (
+        patch("app.workers.notebook_tasks.celery_session_maker", TestSessionLocal),
+        patch("app.workers.notebook_tasks.get_file_storage", return_value=fake_storage),
+        patch(
+            "app.workers.notebook_tasks.NotebookLMClient",
+            return_value=mock_notebooklm_client,
+        ),
+        patch("app.workers.notebook_tasks.run_task", side_effect=_assert_temp_file),
+    ):
+        await _index_notebook_source(source.id)
+
+    await db_session.refresh(source)
+
+    fake_storage.download.assert_not_awaited()
+    assert source.indexing_status == NotebookSourceIndexStatus.INDEXED
+
+
 async def test_index_notebook_source_marks_failed_and_cleans_temp_file_on_error(
     db_session: AsyncSession,
 ) -> None:

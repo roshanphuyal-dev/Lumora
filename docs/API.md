@@ -21,7 +21,8 @@ The contract reference for the FastAPI backend: endpoint groups, auth model, ver
 ### Endpoint Groups
 - **Auth API** — register, login, Google OAuth, token refresh, profile.
 - **Document API** (`/api/v1/documents`, scoped to `uploaded_by` = authenticated user):
-  - `POST /documents` — multipart upload (`file`, optional `subject_id`); writes bytes via `FileStorage` (`backend/app/core/storage.py`) and dispatches async parsing (Celery). Returns the created document (`parse_status=pending`).
+  - `POST /documents` — multipart upload (`file`, optional `subject_id`/`title`/`description`); writes bytes via `FileStorage` (`backend/app/core/storage.py`) and dispatches async parsing (Celery). Returns the created document (`parse_status=pending`).
+  - `POST /documents/url` — link resource (JSON body: `url`, optional `title`/`description`/`subject_id`); no bytes uploaded — dispatches the same async parsing (Celery), which fetches `url` directly (`backend/app/parsers/url_parser.py`) instead of downloading from storage. Returns the created document (`parse_status=pending`).
   - `GET /documents` — paginated list (`limit`/`offset`, optional `subject_id` filter); list items omit `extracted_text`.
   - `GET /documents/{id}` — detail, including `parse_status` and `extracted_text`; also the parse-status poll target (no separate status endpoint).
   - `DELETE /documents/{id}`.

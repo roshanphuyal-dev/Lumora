@@ -25,7 +25,11 @@ Indexing a source is two NotebookLM calls, not one:
 `nlm source add --file` needs a real local filesystem path (no bytes/stdin
 mode), so the document's bytes are downloaded via `FileStorage.download` and
 written to a temp file before indexing, then the temp file is removed in a
-`finally` block regardless of outcome.
+`finally` block regardless of outcome. A link-backed document (`source_url`
+set, no `storage_path`) has no bytes to download — its already-extracted text
+(`document.extracted_text`, populated by `document_tasks.parse_document_task`
+before this task is ever dispatched — see `notebook_service.attach_source`'s
+`parse_status == done` requirement) is written to the temp file instead.
 """
 
 import asyncio
@@ -72,10 +76,13 @@ async def _index_notebook_source(notebook_source_id: uuid.UUID) -> None:
                 notebook.notebooklm_notebook_id = remote_notebook_id
                 await db.commit()
 
-            file_bytes = await get_file_storage().download(document.storage_path)
-            tmp_path = await asyncio.to_thread(
-                _write_temp_file, file_bytes, Path(document.filename).suffix
-            )
+            if document.source_url is not None:
+                content = (document.extracted_text or "").encode("utf-8")
+                suffix = ".txt"
+            else:
+                content = await get_file_storage().download(document.storage_path)
+                suffix = Path(document.filename).suffix
+            tmp_path = await asyncio.to_thread(_write_temp_file, content, suffix)
 
             await run_task(
                 TaskType.DOCUMENT_INDEX,

@@ -67,6 +67,8 @@ async def create_document(
     file_type: str,
     content: bytes,
     subject_id: uuid.UUID | None = None,
+    title: str | None = None,
+    description: str | None = None,
 ) -> Document:
     """Persist the uploaded bytes and create the `Document` row in `pending` status.
 
@@ -87,6 +89,39 @@ async def create_document(
         mime_type=mime_type,
         file_type=file_type,
         parse_status=DocumentParseStatus.PENDING,
+        title=title,
+        description=description,
+    )
+    db.add(document)
+    await db.commit()
+    await db.refresh(document)
+    return document
+
+
+async def create_url_document(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    url: str,
+    filename: str,
+    subject_id: uuid.UUID | None = None,
+    title: str | None = None,
+    description: str | None = None,
+) -> Document:
+    """Create a link-backed `Document` row in `pending` status (no storage upload —
+    `document_tasks.parse_document_task` fetches `source_url` directly at parse time).
+    """
+    document = Document(
+        id=uuid.uuid4(),
+        uploaded_by=user_id,
+        subject_id=subject_id,
+        filename=filename,
+        source_url=url,
+        mime_type="text/html",
+        file_type="url",
+        parse_status=DocumentParseStatus.PENDING,
+        title=title,
+        description=description,
     )
     db.add(document)
     await db.commit()

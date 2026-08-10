@@ -1,31 +1,10 @@
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { getDocument, uploadDocument, type DocumentDetail } from "@/lib/documents"
+import { uploadDocument } from "@/lib/documents"
 import { attachSource, createNotebook } from "@/lib/notebooks"
+import { waitForParse } from "@/lib/wait-for-parse"
 
 export type UploadStage = "uploading" | "parsing" | "creating-notebook"
-
-const POLL_INTERVAL_MS = 1500
-const POLL_TIMEOUT_MS = 90_000
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-async function waitForParse(documentId: string): Promise<DocumentDetail> {
-  const deadline = Date.now() + POLL_TIMEOUT_MS
-  for (;;) {
-    const document = await getDocument(documentId)
-    if (document.parse_status === "done") return document
-    if (document.parse_status === "failed") {
-      throw new Error(`Couldn't read "${document.filename}" — the file may be corrupted or unsupported.`)
-    }
-    if (Date.now() > deadline) {
-      throw new Error(`Parsing "${document.filename}" is taking longer than expected. Try again shortly.`)
-    }
-    await sleep(POLL_INTERVAL_MS)
-  }
-}
 
 function notebookNameFromFilename(filename: string): string {
   const withoutExtension = filename.replace(/\.[^./]+$/, "")
@@ -40,6 +19,8 @@ function notebookNameFromFilename(filename: string): string {
 export function useUploadSource() {
   const queryClient = useQueryClient()
   const [stage, setStage] = useState<UploadStage | null>(null)
+  // null = indeterminate (no signal to report yet, e.g. upload/notebook-creation stages).
+  const [parseProgress, setParseProgress] = useState<number | null>(null)
 
   const mutation = useMutation({
     mutationFn: async (file: File) => {
@@ -47,7 +28,8 @@ export function useUploadSource() {
       const document = await uploadDocument(file)
 
       setStage("parsing")
-      const parsed = await waitForParse(document.id)
+      setParseProgress(0)
+      const parsed = await waitForParse(document.id, setParseProgress)
 
       setStage("creating-notebook")
       const notebook = await createNotebook(notebookNameFromFilename(parsed.filename))
@@ -60,12 +42,14 @@ export function useUploadSource() {
     },
     onSettled: () => {
       setStage(null)
+      setParseProgress(null)
     },
   })
 
   return {
     uploadSource: mutation.mutate,
     stage,
+    parseProgress,
     isError: mutation.isError,
     error: mutation.error,
     reset: mutation.reset,

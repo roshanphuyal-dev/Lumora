@@ -104,3 +104,5 @@ repeatedly — idempotent, reports "already exists" instead of erroring on a sec
   not a bug (`docs/DECISIONS.md#known-debt-not-yet-adr-worthy`).
 - Full command reference: `CLAUDE.md`. Deeper setup detail (Supabase, Google OAuth, OpenCode
   Zen signup): earlier project conversation / `docs/SECURITY.md` / `docs/DEPLOYMENT.md`.
+
+#  test@lumora.dev / testpass123

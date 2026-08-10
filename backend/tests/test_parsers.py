@@ -1,5 +1,5 @@
 import io
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from docx import Document as DocxDocument
@@ -11,6 +11,7 @@ from app.parsers.docx_parser import parse as parse_docx
 from app.parsers.image_parser import parse as parse_image
 from app.parsers.pdf_parser import parse as parse_pdf
 from app.parsers.pptx_parser import parse as parse_pptx
+from app.parsers.url_parser import parse_url
 
 
 def _pdf_bytes(page_count: int = 2) -> bytes:
@@ -115,3 +116,50 @@ def test_get_parser_falls_back_to_file_type_when_mime_type_unknown() -> None:
 def test_get_parser_raises_for_unknown_type() -> None:
     with pytest.raises(UnsupportedFileTypeError):
         get_parser("application/x-nonsense", "xyz")
+
+
+def _mock_http_client(*, response: MagicMock) -> MagicMock:
+    http_client = AsyncMock()
+    http_client.get.return_value = response
+    context_manager = MagicMock()
+    context_manager.__aenter__.return_value = http_client
+    context_manager.__aexit__.return_value = False
+    return context_manager
+
+
+async def test_parse_url_strips_tags_and_extracts_title() -> None:
+    response = MagicMock()
+    response.text = (
+        "<html><head><title>My Page</title></head>"
+        "<body><p>Hello <b>world</b></p><script>ignored()</script></body></html>"
+    )
+    response.raise_for_status.return_value = None
+
+    with patch(
+        "app.parsers.url_parser.httpx.AsyncClient",
+        return_value=_mock_http_client(response=response),
+    ):
+        result = await parse_url("https://example.com/article")
+
+    assert result.title == "My Page"
+    assert "Hello" in result.text
+    assert "world" in result.text
+    assert "ignored()" not in result.text
+
+
+async def test_parse_url_sends_a_descriptive_user_agent() -> None:
+    # A blank UA (or httpx's default) gets 403'd by some sites (e.g. Wikipedia) with
+    # basic bot filtering -- regression test for that.
+    response = MagicMock()
+    response.text = "<p>text</p>"
+    response.raise_for_status.return_value = None
+    http_context = _mock_http_client(response=response)
+
+    with patch(
+        "app.parsers.url_parser.httpx.AsyncClient", return_value=http_context
+    ) as mock_client_cls:
+        await parse_url("https://example.com")
+
+    _, kwargs = mock_client_cls.call_args
+    assert "User-Agent" in kwargs["headers"]
+    assert kwargs["headers"]["User-Agent"]

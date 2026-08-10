@@ -2,6 +2,7 @@ import { useRef } from "react"
 import { UploadCloud } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Progress } from "@/components/ui/progress"
 import { ApiError } from "@/lib/api"
 import { useUploadSource, type UploadStage } from "@/hooks/use-upload-source"
 
@@ -16,8 +17,12 @@ const ACCEPTED_TYPES =
 
 export function UploadSourceCard() {
   const inputRef = useRef<HTMLInputElement>(null)
-  const { uploadSource, stage, isError, error, reset } = useUploadSource()
+  const { uploadSource, stage, parseProgress, isError, error, reset } = useUploadSource()
   const isBusy = stage !== null
+  // "uploading"/"creating-notebook" have no real progress signal (fetch() doesn't expose
+  // upload byte-progress, and notebook creation is a single fast request) so they pulse at a
+  // fixed value; "parsing" has one (elapsed time vs. the poll timeout, see use-upload-source.ts).
+  const progressValue = stage === "parsing" ? (parseProgress ?? 0) : 45
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -44,6 +49,14 @@ export function UploadSourceCard() {
         <Button onClick={() => inputRef.current?.click()} disabled={isBusy}>
           {isBusy ? STAGE_LABEL[stage] : "Upload material"}
         </Button>
+
+        {isBusy && (
+          <Progress
+            value={progressValue}
+            className={stage !== "parsing" ? "w-48 animate-pulse motion-reduce:animate-none" : "w-48"}
+            aria-label={STAGE_LABEL[stage]}
+          />
+        )}
 
         {isError && (
           <div className="flex flex-col items-center gap-1">

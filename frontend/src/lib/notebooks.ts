@@ -36,10 +36,10 @@ export function fetchNotebook(notebookId: string): Promise<NotebookDetail> {
   return apiFetch<NotebookDetail>(`/notebooks/${notebookId}`)
 }
 
-export function createNotebook(name: string): Promise<Notebook> {
+export function createNotebook(name: string, description?: string): Promise<Notebook> {
   return apiFetch<Notebook>("/notebooks", {
     method: "POST",
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, description: description || null }),
   })
 }
 

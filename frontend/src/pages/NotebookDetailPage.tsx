@@ -1,13 +1,16 @@
 import { useParams, Link } from "react-router-dom"
-import { ArrowLeft, CheckCircle2, Clock, FileText, X, XCircle } from "lucide-react"
+import { ArrowLeft, CheckCircle2, Clock, FileText, Plus, X, XCircle } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ApiError } from "@/lib/api"
 import { useNotebook } from "@/hooks/use-notebook"
 import { useSourceDocuments } from "@/hooks/use-source-documents"
 import { useDetachSource } from "@/hooks/use-detach-source"
 import { DeleteNotebookButton } from "@/components/notebook/DeleteNotebookButton"
 import { AskNotebookSection } from "@/components/notebook/AskNotebookSection"
+import { ResourceDialog } from "@/components/notebook/ResourceDialog"
 import type { IndexingStatus } from "@/lib/notebooks"
 
 const STATUS_META: Record<IndexingStatus, { icon: typeof Clock; label: string; className: string }> = {
@@ -56,53 +59,73 @@ export function NotebookDetailPage() {
             <DeleteNotebookButton notebookId={notebookId} />
           </header>
 
-          <section className="flex flex-col gap-3">
-            <h2 className="text-sm font-medium text-foreground">Sources</h2>
+          <Tabs defaultValue="resources">
+            <TabsList>
+              <TabsTrigger value="resources">Resources</TabsTrigger>
+              <TabsTrigger value="ask">Ask</TabsTrigger>
+            </TabsList>
 
-            {notebook.sources.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
-                  <FileText className="size-6" aria-hidden="true" />
-                  <p className="text-sm">No sources attached yet.</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="rounded-md border border-border">
-                {notebook.sources.map((source, index) => {
-                  const status = STATUS_META[source.indexing_status]
-                  const document = documentQueries[index]?.data
-                  return (
-                    <div key={source.id}>
-                      {index > 0 && <Separator />}
-                      <div className="flex items-center gap-2 px-3 py-2.5">
-                        <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
-                        <span className="text-sm text-foreground">
-                          {document?.filename ?? "…"}
-                        </span>
-                        <span
-                          className={`ml-auto flex items-center gap-1 text-xs ${status.className}`}
-                        >
-                          <status.icon className="size-3.5" aria-hidden="true" />
-                          {status.label}
-                        </span>
-                        <button
-                          type="button"
-                          aria-label={`Remove ${document?.filename ?? "source"}`}
-                          disabled={isDetaching && detachingSourceId === source.id}
-                          onClick={() => detachSource(source.id)}
-                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-                        >
-                          <X className="size-3.5" aria-hidden="true" />
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
+            <TabsContent value="resources" className="flex flex-col gap-3 pt-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-medium text-foreground">Resources</h2>
+                <ResourceDialog
+                  mode="attach"
+                  notebookId={notebookId}
+                  trigger={
+                    <Button variant="outline" size="sm">
+                      <Plus className="size-3.5" aria-hidden="true" />
+                      Add resource
+                    </Button>
+                  }
+                />
               </div>
-            )}
-          </section>
 
-          <AskNotebookSection notebookId={notebookId} />
+              {notebook.sources.length === 0 ? (
+                <Card>
+                  <CardContent className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
+                    <FileText className="size-6" aria-hidden="true" />
+                    <p className="text-sm">No resources attached yet.</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="rounded-md border border-border">
+                  {notebook.sources.map((source, index) => {
+                    const status = STATUS_META[source.indexing_status]
+                    const document = documentQueries[index]?.data
+                    const label = document?.title ?? document?.filename ?? "…"
+                    return (
+                      <div key={source.id}>
+                        {index > 0 && <Separator />}
+                        <div className="flex items-center gap-2 px-3 py-2.5">
+                          <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
+                          <span className="text-sm text-foreground">{label}</span>
+                          <span
+                            className={`ml-auto flex items-center gap-1 text-xs ${status.className}`}
+                          >
+                            <status.icon className="size-3.5" aria-hidden="true" />
+                            {status.label}
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={`Remove ${label}`}
+                            disabled={isDetaching && detachingSourceId === source.id}
+                            onClick={() => detachSource(source.id)}
+                            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                          >
+                            <X className="size-3.5" aria-hidden="true" />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="ask" className="pt-3">
+              <AskNotebookSection notebookId={notebookId} />
+            </TabsContent>
+          </Tabs>
         </>
       )}
     </div>

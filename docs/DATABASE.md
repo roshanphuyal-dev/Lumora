@@ -27,7 +27,7 @@ PostgreSQL via Supabase, `pgvector` extension enabled for embeddings. SQLAlchemy
 |---|---|
 | `users` | Accounts, auth, profile |
 | `courses` / `subjects` | Organizational grouping for a student's material |
-| `documents` | Uploaded files + extracted metadata |
+| `documents` | Uploaded files or linked URLs + extracted metadata |
 | `notebooks` | Knowledge-base containers grouping related sources |
 | `notebook_sources` | Join: which documents/sources belong to which notebook |
 | `notes` | Generated notes/study guides |
@@ -44,7 +44,7 @@ PostgreSQL via Supabase, `pgvector` extension enabled for embeddings. SQLAlchemy
 | `generated_materials` | Generic table for generated study materials not covered above |
 
 ### Relationships (high level)
-`users` own `documents` (`uploaded_by`, `ON DELETE CASCADE`) and `notebooks` (`owner_id`, `ON DELETE CASCADE`) directly — both `documents.subject_id` and `notebooks.subject_id` are optional (`ON DELETE SET NULL`), so a document/notebook survives its subject being deleted and isn't required to belong to one. `notebook_sources` is the join between `notebooks` and `documents` (both `ON DELETE CASCADE` — deleting either side removes the join row), unique on `(notebook_id, document_id)`, and carries its own NotebookLM indexing lifecycle independent of the document's parse lifecycle. `notebook_sources` → `embeddings` (once chunking/embedding lands). `quizzes` → `questions` → `quiz_attempts` → `weak_topics`/`progress`. Full ERD to be added once schema stabilizes.
+`users` own `documents` (`uploaded_by`, `ON DELETE CASCADE`) and `notebooks` (`owner_id`, `ON DELETE CASCADE`) directly — both `documents.subject_id` and `notebooks.subject_id` are optional (`ON DELETE SET NULL`), so a document/notebook survives its subject being deleted and isn't required to belong to one. A `document` is either file-backed (`storage_path` set) or link-backed (`source_url` set, e.g. a pasted URL) — exactly one of the two, enforced by a CHECK constraint — and both kinds carry the same optional `title`/`description` resource metadata (falls back to `filename` when unset). `notebook_sources` is the join between `notebooks` and `documents` (both `ON DELETE CASCADE` — deleting either side removes the join row), unique on `(notebook_id, document_id)` — this is what makes a notebook's "Resources" tab a one-notebook-to-many-documents relationship — and carries its own NotebookLM indexing lifecycle independent of the document's parse lifecycle. `notebook_sources` → `embeddings` (once chunking/embedding lands). `quizzes` → `questions` → `quiz_attempts` → `weak_topics`/`progress`. Full ERD to be added once schema stabilizes.
 
 ### Indexing Strategy
 - `pgvector` HNSW/IVFFlat index on `embeddings.vector` scoped by notebook for retrieval performance (choice TBD at implementation, tradeoffs in ADR if changed later).

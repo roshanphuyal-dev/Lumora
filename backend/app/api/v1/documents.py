@@ -4,7 +4,7 @@ from fastapi import APIRouter, File, Form, Query, UploadFile, status
 
 from app.core.dependencies import CurrentUser, DbSession
 from app.schemas.course import Page
-from app.schemas.document import DocumentDetail, DocumentRead
+from app.schemas.document import DocumentDetail, DocumentRead, UrlDocumentCreate
 from app.services import document_service
 from app.workers.document_tasks import parse_document_task
 
@@ -14,6 +14,8 @@ Limit = Query(default=20, ge=1, le=100)
 Offset = Query(default=0, ge=0)
 UploadedFile = File(...)
 SubjectIdForm = Form(None)
+TitleForm = Form(None)
+DescriptionForm = Form(None)
 
 
 def _infer_file_type(filename: str | None) -> str:
@@ -33,6 +35,8 @@ async def upload_document(
     db: DbSession,
     file: UploadFile = UploadedFile,
     subject_id: uuid.UUID | None = SubjectIdForm,
+    title: str | None = TitleForm,
+    description: str | None = DescriptionForm,
 ) -> DocumentDetail:
     """Upload a file and start parsing it.
 
@@ -51,6 +55,29 @@ async def upload_document(
         file_type=_infer_file_type(file.filename),
         content=content,
         subject_id=subject_id,
+        title=title,
+        description=description,
+    )
+    parse_document_task.delay(str(document.id))
+    return DocumentDetail.model_validate(document)
+
+
+@router.post("/url", response_model=DocumentDetail, status_code=status.HTTP_201_CREATED)
+async def create_url_document(
+    payload: UrlDocumentCreate, current_user: CurrentUser, db: DbSession
+) -> DocumentDetail:
+    """Register a link resource and start parsing it (fetches `url` at parse time —
+    see `app/parsers/url_parser.py` — rather than accepting uploaded bytes).
+    """
+    url = str(payload.url)
+    document = await document_service.create_url_document(
+        db,
+        current_user.id,
+        url=url,
+        filename=payload.title or url,
+        subject_id=payload.subject_id,
+        title=payload.title,
+        description=payload.description,
     )
     parse_document_task.delay(str(document.id))
     return DocumentDetail.model_validate(document)

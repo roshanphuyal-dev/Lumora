@@ -2,8 +2,8 @@ import enum
 import uuid
 from typing import TYPE_CHECKING
 
+from sqlalchemy import CheckConstraint, ForeignKey, String, Text
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,12 +24,21 @@ class DocumentParseStatus(enum.StrEnum):
 
 
 class Document(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """An uploaded file (PDF/DOCX/PPTX/image/URL) plus its extracted text.
+    """An uploaded file (PDF/DOCX/PPTX/image) or a linked URL, plus its extracted text.
 
     Raw bytes are never stored here — `storage_path` points at Supabase Storage.
+    A Document is either file-backed (`storage_path` set, `source_url` null) or
+    link-backed (`source_url` set, `storage_path` null) — never both, enforced by
+    `ck_documents_exactly_one_of_storage_path_source_url`.
     """
 
     __tablename__ = "documents"
+    __table_args__ = (
+        CheckConstraint(
+            "(storage_path IS NOT NULL) != (source_url IS NOT NULL)",
+            name="ck_documents_exactly_one_of_storage_path_source_url",
+        ),
+    )
 
     uploaded_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
@@ -43,9 +52,16 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
     )
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    storage_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    # Nullable: null for link-backed documents (see class docstring).
+    storage_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # Nullable: set only for link-backed documents.
+    source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     mime_type: Mapped[str] = mapped_column(String(127), nullable=False)
     file_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    # Optional resource metadata — display title/description distinct from filename.
+    # Nullable: falls back to `filename` in the API/UI when unset.
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     parse_status: Mapped[DocumentParseStatus] = mapped_column(
         SAEnum(
             DocumentParseStatus,

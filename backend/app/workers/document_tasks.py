@@ -15,6 +15,7 @@ import uuid
 from app.core.storage import get_file_storage
 from app.db.session import celery_session_maker
 from app.parsers import get_parser
+from app.parsers.url_parser import parse_url
 from app.services import document_service
 from app.workers.celery_app import celery_app
 
@@ -36,9 +37,12 @@ async def _parse_document(document_id: uuid.UUID) -> None:
         document = await document_service.mark_processing(db, document_id)
 
         try:
-            file_bytes = await get_file_storage().download(document.storage_path)
-            parser = get_parser(document.mime_type, document.file_type)
-            parsed = parser(file_bytes)
+            if document.source_url is not None:
+                parsed = await parse_url(document.source_url)
+            else:
+                file_bytes = await get_file_storage().download(document.storage_path)
+                parser = get_parser(document.mime_type, document.file_type)
+                parsed = parser(file_bytes)
         except Exception:
             logger.exception("Failed to parse document %s", document_id)
             await document_service.mark_parse_failed(db, document_id)
