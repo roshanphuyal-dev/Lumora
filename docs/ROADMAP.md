@@ -27,10 +27,10 @@ Tracks *when* things get built, in phase order, with enough granularity to know 
 
 Verified end-to-end against a running backend + real providers (no stubs remaining). Deployment (CI/CD, live hosting) is intentionally not a gate for this status — see Phase 5 and the Definition of Done note below.
 
-### Phase 2 — Study Materials (Status: Not Started)
+### Phase 2 — Study Materials (Status: In Progress)
 - Notes, study guides, flashcards
 - AI chat (basic Q&A grounded in notebook) — streaming + persisted history architecture pre-specified in [ADR 0009](adr/0009-ai-chat-streaming-persistence-export.md)
-- Knowledge base UI (notebook/source management)
+- Knowledge base UI (notebook/source management and notebook search) — done
 
 ### Phase 3 — Assessment (Status: Not Started)
 - Quiz generation (all question types)

@@ -13,7 +13,7 @@ from ai.orchestrator.orchestrator import OrchestrationError, run_task
 from ai.orchestrator.schemas import Citation, NotebookQueryRequest, TeachingExplanationRequest
 from ai.orchestrator.task_types import TaskType
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -42,14 +42,26 @@ async def create_notebook(
 
 
 async def list_notebooks(
-    db: AsyncSession, owner_id: uuid.UUID, limit: int, offset: int
+    db: AsyncSession,
+    owner_id: uuid.UUID,
+    limit: int,
+    offset: int,
+    *,
+    search: str | None = None,
 ) -> PageResult[Notebook]:
-    total = await db.scalar(
-        select(func.count()).select_from(Notebook).where(Notebook.owner_id == owner_id)
-    )
+    filters = [Notebook.owner_id == owner_id]
+    if search:
+        filters.append(
+            or_(
+                Notebook.name.icontains(search, autoescape=True),
+                Notebook.description.icontains(search, autoescape=True),
+            )
+        )
+
+    total = await db.scalar(select(func.count()).select_from(Notebook).where(*filters))
     result = await db.scalars(
         select(Notebook)
-        .where(Notebook.owner_id == owner_id)
+        .where(*filters)
         .order_by(Notebook.created_at.desc())
         .limit(limit)
         .offset(offset)

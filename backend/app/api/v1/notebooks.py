@@ -38,9 +38,13 @@ async def create_notebook(
 
 @router.get("", response_model=Page[NotebookRead])
 async def list_notebooks(
-    current_user: CurrentUser, db: DbSession, limit: int = Limit, offset: int = Offset
+    current_user: CurrentUser,
+    db: DbSession,
+    limit: int = Limit,
+    offset: int = Offset,
+    search: str | None = Query(default=None, min_length=1, max_length=255),
 ) -> Page[NotebookRead]:
-    page = await notebook_service.list_notebooks(db, current_user.id, limit, offset)
+    page = await notebook_service.list_notebooks(db, current_user.id, limit, offset, search=search)
     return Page[NotebookRead](
         items=[NotebookRead.model_validate(n) for n in page.items],
         total=page.total,

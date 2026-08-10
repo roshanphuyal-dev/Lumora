@@ -6,10 +6,14 @@ import { Separator } from "@/components/ui/separator"
 import { ApiError } from "@/lib/api"
 import { useNotebooks } from "@/hooks/use-notebooks"
 
+interface NotebookListProps {
+  search?: string
+}
+
 // Shared between the dashboard's "Your notebooks" section and the full /notebooks list page --
 // same data, same states, same ledger rendering; only the surrounding heading/layout differs.
-export function NotebookList() {
-  const { data, isPending, isError, error, refetch, isFetching } = useNotebooks()
+export function NotebookList({ search = "" }: NotebookListProps) {
+  const { data, isPending, isError, error, refetch, isFetching } = useNotebooks(search)
 
   if (isPending) {
     return (
@@ -41,7 +45,11 @@ export function NotebookList() {
       <Card>
         <CardContent className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
           <NotebookText className="size-6" aria-hidden="true" />
-          <p className="text-sm">Nothing here yet — upload a document to create your first notebook.</p>
+          <p className="text-sm">
+            {search
+              ? `No notebooks match “${search}”.`
+              : "Nothing here yet — upload a document to create your first notebook."}
+          </p>
         </CardContent>
       </Card>
     )

@@ -83,6 +83,56 @@ async def test_notebooks_are_isolated_per_user(client: AsyncClient) -> None:
     assert resp.json()["total"] == 0
 
 
+async def test_search_notebooks_by_name_or_description_is_owner_scoped(
+    client: AsyncClient,
+) -> None:
+    token_a = await _register_and_login(client, "nb-search-owner@example.com")
+    token_b = await _register_and_login(client, "nb-search-other@example.com")
+
+    await client.post(
+        "/api/v1/notebooks",
+        json={"name": "Cell Biology", "description": "Mitochondria and respiration"},
+        headers=_auth(token_a),
+    )
+    await client.post(
+        "/api/v1/notebooks",
+        json={"name": "Organic Chemistry", "description": "Reaction mechanisms"},
+        headers=_auth(token_a),
+    )
+    await client.post(
+        "/api/v1/notebooks",
+        json={"name": "Private Biology", "description": "Mitochondria"},
+        headers=_auth(token_b),
+    )
+
+    name_response = await client.get(
+        "/api/v1/notebooks", params={"search": "BIOLOGY"}, headers=_auth(token_a)
+    )
+    description_response = await client.get(
+        "/api/v1/notebooks", params={"search": "mitochondria"}, headers=_auth(token_a)
+    )
+
+    assert name_response.status_code == 200
+    assert name_response.json()["total"] == 1
+    assert name_response.json()["items"][0]["name"] == "Cell Biology"
+    assert description_response.json()["total"] == 1
+    assert description_response.json()["items"][0]["name"] == "Cell Biology"
+
+
+async def test_search_notebooks_treats_wildcards_as_literal_text(
+    client: AsyncClient, unique_email: str
+) -> None:
+    token = await _register_and_login(client, unique_email)
+    await client.post("/api/v1/notebooks", json={"name": "Physics 100%"}, headers=_auth(token))
+    await client.post("/api/v1/notebooks", json={"name": "Physics basics"}, headers=_auth(token))
+
+    response = await client.get("/api/v1/notebooks", params={"search": "%"}, headers=_auth(token))
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["name"] == "Physics 100%"
+
+
 async def test_cannot_get_or_delete_another_users_notebook(client: AsyncClient) -> None:
     token_a = await _register_and_login(client, "nbdel-owner@example.com")
     token_b = await _register_and_login(client, "nbdel-intruder@example.com")

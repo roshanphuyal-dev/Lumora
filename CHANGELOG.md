@@ -7,6 +7,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 ## [Unreleased]
 
 ### Added
+- Notebook search on the full Notebooks page, backed by owner-scoped, case-insensitive name and description filtering on `GET /api/v1/notebooks?search=`.
 - Project documentation and Claude Code workspace scaffold (`docs/`, `.claude/`, `AGENTS.md`, `CONTRIBUTING.md`).
 - Backend scaffold (FastAPI + SQLAlchemy async + Alembic) with `users`, `courses`, `subjects` tables and their first migration.
 - Auth API: register, login, Google ID-token login, refresh — JWT access + refresh token pair.

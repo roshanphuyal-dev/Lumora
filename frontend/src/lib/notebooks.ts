@@ -28,8 +28,10 @@ export interface NotebookDetail extends Notebook {
   sources: NotebookSource[]
 }
 
-export function fetchNotebooks(): Promise<Page<Notebook>> {
-  return apiFetch<Page<Notebook>>("/notebooks?limit=20&offset=0")
+export function fetchNotebooks(search = ""): Promise<Page<Notebook>> {
+  const params = new URLSearchParams({ limit: "20", offset: "0" })
+  if (search) params.set("search", search)
+  return apiFetch<Page<Notebook>>(`/notebooks?${params.toString()}`)
 }
 
 export function fetchNotebook(notebookId: string): Promise<NotebookDetail> {
