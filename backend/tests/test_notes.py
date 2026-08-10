@@ -130,6 +130,71 @@ async def test_generate_note_persists_failure(db_session: AsyncSession) -> None:
     assert note.error_message == "providers unavailable"
 
 
+async def test_generate_note_persists_structured_content_json(db_session: AsyncSession) -> None:
+    user, notebook = await _user_notebook(db_session, "note-structured@example.com")
+    note = Note(
+        notebook_id=notebook.id,
+        user_id=user.id,
+        material_type=NoteMaterialType.MNEMONICS,
+        title="Planets",
+        citations=[],
+    )
+    db_session.add(note)
+    await db_session.commit()
+    await db_session.refresh(note)
+    response = AIResponse(
+        task_type=TaskType.STRUCTURED_NOTE_GENERATION,
+        provider=ProviderName.GEMINI,
+        content=(
+            '[{"label": "Order", "value": "My Very Educated...", '
+            '"detail": "...", "citation": null}]'
+        ),
+        citations=[Citation(source_id="source-1")],
+    )
+    with (
+        patch("app.workers.note_tasks.celery_session_maker", TestSessionLocal),
+        patch("app.workers.note_tasks.run_task", new=AsyncMock(return_value=response)),
+    ):
+        await _generate_note(note.id)
+    await db_session.refresh(note)
+    assert note.status is NoteStatus.DONE
+    assert note.content is None
+    assert note.content_json == [
+        {"label": "Order", "value": "My Very Educated...", "detail": "...", "citation": None}
+    ]
+
+
+async def test_generate_note_persists_failure_on_malformed_structured_json(
+    db_session: AsyncSession,
+) -> None:
+    user, notebook = await _user_notebook(db_session, "note-malformed@example.com")
+    note = Note(
+        notebook_id=notebook.id,
+        user_id=user.id,
+        material_type=NoteMaterialType.COMPARISON_CHART,
+        title="Mitosis vs Meiosis",
+        citations=[],
+    )
+    db_session.add(note)
+    await db_session.commit()
+    await db_session.refresh(note)
+    response = AIResponse(
+        task_type=TaskType.STRUCTURED_NOTE_GENERATION,
+        provider=ProviderName.GEMINI,
+        content="not valid json",
+        citations=[],
+    )
+    with (
+        patch("app.workers.note_tasks.celery_session_maker", TestSessionLocal),
+        patch("app.workers.note_tasks.run_task", new=AsyncMock(return_value=response)),
+    ):
+        await _generate_note(note.id)
+    await db_session.refresh(note)
+    assert note.status is NoteStatus.FAILED
+    assert note.content_json is None
+    assert note.error_message is not None
+
+
 async def test_generate_note_uses_grounding_only_for_indexed_remote_notebook(
     db_session: AsyncSession,
 ) -> None:

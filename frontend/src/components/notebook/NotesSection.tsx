@@ -1,5 +1,19 @@
 import { useState } from "react"
-import { CheckCircle2, ChevronDown, ChevronRight, Clock, FileText, Loader2, Trash2, XCircle } from "lucide-react"
+import {
+  Brain,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  FileText,
+  History,
+  ListChecks,
+  Loader2,
+  Sigma,
+  Table2,
+  Trash2,
+  XCircle,
+} from "lucide-react"
 import { useForm } from "react-hook-form"
 import Markdown from "react-markdown"
 import rehypeSanitize from "rehype-sanitize"
@@ -10,7 +24,17 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { useCreateNote, useDeleteNote, useNotes } from "@/hooks/use-notes"
 import { ApiError } from "@/lib/api"
-import type { GenerationStatus, MaterialType, NoteRead } from "@/lib/notes"
+import type { Citation, GenerationStatus, MaterialType, NoteRead } from "@/lib/notes"
+
+const TYPE_META = {
+  note: { label: "Note", description: "A focused summary of one topic or source.", icon: FileText },
+  study_guide: { label: "Study Guide", description: "A broader, exam-oriented compilation.", icon: FileText },
+  cheat_sheet: { label: "Cheat Sheet", description: "An ultra-condensed quick-reference for last-minute review", icon: ListChecks },
+  formula_sheet: { label: "Formula Sheet", description: "Just the formulas, grouped by topic, with variables defined", icon: Sigma },
+  mnemonics: { label: "Mnemonics", description: "Memory devices for hard-to-remember concepts", icon: Brain },
+  timeline: { label: "Timeline", description: "Key events in chronological order", icon: History },
+  comparison_chart: { label: "Comparison Chart", description: "A side-by-side table comparing related concepts", icon: Table2 },
+} satisfies Record<MaterialType, { label: string; description: string; icon: typeof FileText }>
 
 const STATUS_META: Record<GenerationStatus, { icon: typeof Clock; label: string; className: string }> = {
   pending: { icon: Clock, label: "Pending", className: "text-muted-foreground" },
@@ -24,8 +48,144 @@ interface NoteFormValues {
   topic: string
 }
 
+interface StructuredNoteItem {
+  label: string
+  value: string
+  detail: string
+  citation: Citation | null
+}
+
+interface ComparisonChartData {
+  subjects: string[]
+  attributes: string[]
+  rows: string[][]
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+function isCitation(value: unknown): value is Citation {
+  if (!isRecord(value) || typeof value.source_id !== "string") return false
+  return (value.chunk_id === undefined || value.chunk_id === null || typeof value.chunk_id === "string")
+    && (value.excerpt === undefined || value.excerpt === null || typeof value.excerpt === "string")
+}
+
+function isStructuredNoteItems(value: unknown): value is StructuredNoteItem[] {
+  return Array.isArray(value) && value.every((item) =>
+    isRecord(item)
+    && typeof item.label === "string"
+    && typeof item.value === "string"
+    && typeof item.detail === "string"
+    && (item.citation === null || isCitation(item.citation)),
+  )
+}
+
+function isComparisonChartData(value: unknown): value is ComparisonChartData {
+  if (!isRecord(value)) return false
+  const { subjects, attributes, rows } = value
+  if (!Array.isArray(subjects) || !subjects.every((item) => typeof item === "string")) return false
+  if (!Array.isArray(attributes) || !attributes.every((item) => typeof item === "string")) return false
+  return Array.isArray(rows)
+    && rows.length === subjects.length
+    && rows.every((row) =>
+      Array.isArray(row)
+      && row.length === attributes.length
+      && row.every((cell) => typeof cell === "string"),
+    )
+}
+
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback
+}
+
+function CitationBox({ citation }: { citation: Citation }) {
+  return (
+    <div className="mt-2 rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">
+      <span className="font-medium text-foreground">Source {citation.source_id}</span>
+      {citation.excerpt && <span className="mt-0.5 block">“{citation.excerpt}”</span>}
+    </div>
+  )
+}
+
+function InvalidContent({ label }: { label: string }) {
+  return <p className="text-sm text-destructive" role="alert">This {label.toLowerCase()} couldn't be displayed because its data is invalid.</p>
+}
+
+function StructuredContent({ note }: { note: NoteRead }) {
+  if (!isStructuredNoteItems(note.content_json)) return <InvalidContent label={TYPE_META[note.material_type].label} />
+  const isTimeline = note.material_type === "timeline"
+
+  return (
+    <ol className={isTimeline ? "ml-1 border-l border-border" : "flex flex-col divide-y divide-border"}>
+      {note.content_json.map((item, index) => (
+        <li key={`${item.label}-${index}`} className={isTimeline ? "relative pb-5 pl-5 last:pb-0" : "py-3 first:pt-0 last:pb-0"}>
+          {isTimeline && <span className="absolute -left-1 top-1.5 size-2 rounded-full bg-muted-foreground ring-4 ring-background" aria-hidden="true" />}
+          <p className="font-serif text-sm font-semibold text-foreground">{item.label}</p>
+          <p className="mt-0.5 text-sm font-medium text-foreground">{item.value}</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{item.detail}</p>
+          {item.citation && <CitationBox citation={item.citation} />}
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function ComparisonChart({ note }: { note: NoteRead }) {
+  if (!isComparisonChartData(note.content_json)) return <InvalidContent label="Comparison chart" />
+  const data = note.content_json
+
+  return (
+    <div className="max-w-full overflow-x-auto rounded-md border border-border">
+      <table className="w-full min-w-max border-collapse text-left text-xs">
+        <thead className="bg-muted/50">
+          <tr>
+            <th scope="col" className="border-b border-border px-3 py-2 font-medium text-foreground">Subject</th>
+            {data.attributes.map((attribute, index) => (
+              <th key={`${attribute}-${index}`} scope="col" className="border-b border-l border-border px-3 py-2 font-medium text-foreground">{attribute}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.subjects.map((subject, rowIndex) => (
+            <tr key={`${subject}-${rowIndex}`}>
+              <th scope="row" className="border-b border-border px-3 py-2 font-medium text-foreground last:border-b-0">{subject}</th>
+              {data.rows[rowIndex].map((cell, columnIndex) => (
+                <td key={columnIndex} className="max-w-xs whitespace-normal border-b border-l border-border px-3 py-2 align-top text-muted-foreground last:border-b-0">{cell}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function NoteContent({ note }: { note: NoteRead }) {
+  if (note.material_type === "mnemonics" || note.material_type === "timeline") return <StructuredContent note={note} />
+  if (note.material_type === "comparison_chart") return <ComparisonChart note={note} />
+  if (!note.content) return null
+
+  return (
+    <>
+      <div className="min-w-0 font-serif text-sm leading-relaxed text-foreground [&_h1]:mb-2 [&_h1]:mt-4 [&_h1]:text-lg [&_h1]:font-semibold [&_h1]:first:mt-0 [&_h2]:mb-1 [&_h2]:mt-3 [&_h2]:text-base [&_h2]:font-semibold [&_p]:mb-2 [&_p]:last:mb-0 [&_ul]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_blockquote]:border-l [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_table]:mb-2 [&_table]:w-full [&_table]:text-xs [&_th]:border-b [&_th]:border-border [&_th]:py-1 [&_th]:text-left [&_td]:border-b [&_td]:border-border [&_td]:py-1">
+        <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>{note.content}</Markdown>
+      </div>
+      {note.citations.length > 0 && (
+        <div className="mt-4 rounded-md bg-muted/50 p-3">
+          <h4 className="mb-2 text-xs font-medium text-foreground">Sources</h4>
+          <ul className="flex flex-col gap-2">
+            {note.citations.map((citation, index) => (
+              <li key={citation.chunk_id ?? `${citation.source_id}-${index}`} className="text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">Source {citation.source_id}</span>
+                {citation.excerpt && <span className="mt-0.5 block">“{citation.excerpt}”</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  )
 }
 
 function NoteRow({ note, notebookId }: { note: NoteRead; notebookId: string }) {
@@ -33,6 +193,7 @@ function NoteRow({ note, notebookId }: { note: NoteRead; notebookId: string }) {
   const [confirming, setConfirming] = useState(false)
   const deleteMutation = useDeleteNote(notebookId)
   const status = STATUS_META[note.status]
+  const type = TYPE_META[note.material_type]
   const canExpand = note.status === "done"
 
   return (
@@ -51,8 +212,9 @@ function NoteRow({ note, notebookId }: { note: NoteRead; notebookId: string }) {
             <FileText className="size-4 shrink-0 text-muted-foreground" />
           )}
           <span className="truncate text-sm font-medium text-foreground">{note.title}</span>
-          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-            {note.material_type === "note" ? "Note" : "Study Guide"}
+          <span className="hidden shrink-0 items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground sm:flex">
+            <type.icon className="size-3" aria-hidden="true" />
+            {type.label}
           </span>
         </button>
         <span className={`flex shrink-0 items-center gap-1 text-xs ${status.className}`}>
@@ -96,26 +258,9 @@ function NoteRow({ note, notebookId }: { note: NoteRead; notebookId: string }) {
           {errorMessage(deleteMutation.error, "Couldn't delete this note.")}
         </p>
       )}
-      {expanded && note.content && (
+      {expanded && (
         <div className="border-t border-border px-4 py-4">
-          <div className="min-w-0 font-serif text-sm leading-relaxed text-foreground [&_h1]:mb-2 [&_h1]:mt-4 [&_h1]:text-lg [&_h1]:font-semibold [&_h1]:first:mt-0 [&_h2]:mb-1 [&_h2]:mt-3 [&_h2]:text-base [&_h2]:font-semibold [&_p]:mb-2 [&_p]:last:mb-0 [&_ul]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_blockquote]:border-l [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_table]:mb-2 [&_table]:w-full [&_table]:text-xs [&_th]:border-b [&_th]:border-border [&_th]:py-1 [&_th]:text-left [&_td]:border-b [&_td]:border-border [&_td]:py-1">
-            <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-              {note.content}
-            </Markdown>
-          </div>
-          {note.citations.length > 0 && (
-            <div className="mt-4 rounded-md bg-muted/50 p-3">
-              <h4 className="mb-2 text-xs font-medium text-foreground">Sources</h4>
-              <ul className="flex flex-col gap-2">
-                {note.citations.map((citation, index) => (
-                  <li key={citation.chunk_id ?? `${citation.source_id}-${index}`} className="text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Source {citation.source_id}</span>
-                    {citation.excerpt && <span className="block mt-0.5">“{citation.excerpt}”</span>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <NoteContent note={note} />
         </div>
       )}
     </div>
@@ -146,20 +291,20 @@ export function NotesSection({ notebookId }: { notebookId: string }) {
           <h2 className="text-sm font-medium text-foreground">Generate notes</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">Turn this notebook's resources into grounded study material.</p>
         </div>
-        <div className="mb-4 grid gap-2 sm:grid-cols-2" role="group" aria-label="Material type">
-          {([
-            ["note", "Note", "A focused summary of one topic or source."],
-            ["study_guide", "Study Guide", "A broader, exam-oriented compilation."],
-          ] as const).map(([value, label, description]) => (
+        <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3" role="group" aria-label="Material type">
+          {(Object.entries(TYPE_META) as [MaterialType, (typeof TYPE_META)[MaterialType]][]).map(([value, meta]) => (
             <button
               key={value}
               type="button"
               aria-pressed={materialType === value}
               onClick={() => setMaterialType(value)}
-              className={`rounded-md border p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${materialType === value ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"}`}
+              className={`flex min-w-0 gap-2.5 rounded-md border p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${materialType === value ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"}`}
             >
-              <span className="block text-sm font-medium text-foreground">{label}</span>
-              <span className="mt-0.5 block text-xs text-muted-foreground">{description}</span>
+              <meta.icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-foreground">{meta.label}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">{meta.description}</span>
+              </span>
             </button>
           ))}
         </div>
@@ -169,7 +314,7 @@ export function NotesSection({ notebookId }: { notebookId: string }) {
         </div>
         {createMutation.isError && <p className="mt-3 text-sm text-destructive" role="alert">{errorMessage(createMutation.error, "Couldn't start note generation.")}</p>}
         <Button type="submit" className="mt-4" disabled={createMutation.isPending}>
-          {createMutation.isPending ? "Starting…" : materialType === "note" ? "Generate note" : "Generate study guide"}
+          {createMutation.isPending ? "Starting…" : `Generate ${TYPE_META[materialType].label.toLowerCase()}`}
         </Button>
       </form>
 

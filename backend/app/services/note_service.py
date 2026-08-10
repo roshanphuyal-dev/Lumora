@@ -16,9 +16,7 @@ async def create_note(
 ) -> Note:
     await get_owned_notebook(db, user_id, notebook_id)
     material_type = NoteMaterialType(payload.material_type)
-    default_title = (
-        "Untitled note" if material_type is NoteMaterialType.NOTE else "Untitled study guide"
-    )
+    default_title = f"Untitled {material_type.value.replace('_', ' ')}"
     note = Note(
         notebook_id=notebook_id,
         user_id=user_id,

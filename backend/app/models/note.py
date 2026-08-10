@@ -17,6 +17,16 @@ if TYPE_CHECKING:
 class NoteMaterialType(enum.StrEnum):
     NOTE = "note"
     STUDY_GUIDE = "study_guide"
+    # Markdown, same as NOTE/STUDY_GUIDE -- content only, no content_json.
+    CHEAT_SHEET = "cheat_sheet"
+    FORMULA_SHEET = "formula_sheet"
+    # Structured JSON via Gemini's response_schema mode -- content_json only, content
+    # stays null. MNEMONICS/TIMELINE share a list[{label,value,detail,citation}] shape;
+    # COMPARISON_CHART is a {subjects,attributes,rows} table (see
+    # ai/gemini/client.py's local schemas -- ai/ doesn't import backend model enums).
+    MNEMONICS = "mnemonics"
+    TIMELINE = "timeline"
+    COMPARISON_CHART = "comparison_chart"
 
 
 class NoteStatus(enum.StrEnum):
@@ -63,6 +73,9 @@ class Note(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Populated instead of `content` for MNEMONICS/TIMELINE (a JSON list) and
+    # COMPARISON_CHART (a single JSON object) -- null for every markdown material_type.
+    content_json: Mapped[list[dict] | dict | None] = mapped_column(JSONB, nullable=True)
     citations: Mapped[list[dict[str, str | None]]] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )

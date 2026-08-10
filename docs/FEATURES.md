@@ -32,9 +32,9 @@ Notebook creation, source management, multi-document indexing, citation manageme
 Chunking, embeddings, context retrieval, RAG, NotebookLM retrieval, prompt builder, AI routing, AI generation. See `docs/AI.md`.
 
 ### Study Material Generator (Phase 2)
-Done: Notes (detailed/revision) and study guides, flashcards (Gemini-authored, grounded via NotebookLM retrieval), mind maps, infographics, slide decks, reports, audio summaries, and data tables (NotebookLM Studio-authored — see `docs/AI.md`/`docs/API.md`'s Studio API).
+Done: Notes (detailed/revision), study guides, cheat sheets, formula sheets, mnemonics/memory tricks, timelines, and comparison charts (all seven Gemini-authored `NoteMaterialType` values, grounded via NotebookLM retrieval — the `notes` table and its generation pipeline, extended); flashcards (same pipeline family); mind maps, infographics, slide decks, reports, audio summaries, and data tables (NotebookLM Studio-authored — see `docs/AI.md`/`docs/API.md`'s Studio API).
 
-Not started: cheat sheets, formula sheets, mnemonics/memory tricks, timelines, comparison charts — none of these map to a NotebookLM Studio artifact type, so they'd need a dedicated Gemini-based pipeline (like Notes/Flashcards) if picked up.
+The full catalogue is now covered — nothing left unbuilt under this heading.
 
 ### Quiz Generator (Phase 3)
 MCQ, true/false, fill-in-blank, matching, assertion/reason, short answer, long answer, case studies, scenario questions, adaptive difficulty.

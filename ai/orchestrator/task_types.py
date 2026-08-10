@@ -25,9 +25,16 @@ class TaskType(enum.StrEnum):
     # only if Gemini fails before emitting its first token.
     CHAT_RESPONSE = "chat_response"
 
-    # Notes/study guide generation, grounded in NotebookLM retrieval -> Gemini structures
-    # the retrieved content into markdown (Routing Logic step 1 + 2, docs/AI.md).
+    # Notes/study guide/cheat sheet/formula sheet generation, grounded in NotebookLM
+    # retrieval -> Gemini structures the retrieved content into markdown (Routing Logic
+    # step 1 + 2, docs/AI.md).
     NOTES_GENERATION = "notes_generation"
+
+    # Mnemonics/timeline/comparison-chart generation -> Gemini structured output (JSON,
+    # not markdown) grounded in NotebookLM retrieval. Kept as its own task type rather than
+    # folded into NOTES_GENERATION since the output shape (and Gemini response_schema) is
+    # fundamentally different from markdown.
+    STRUCTURED_NOTE_GENERATION = "structured_note_generation"
 
     # Flashcard set generation, grounded in NotebookLM retrieval -> Gemini structures the
     # retrieved content into a JSON front/back/citation list (Routing Logic step 1 + 2).

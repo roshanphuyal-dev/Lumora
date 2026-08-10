@@ -135,6 +135,19 @@ class FlashcardGenerationRequest(BaseModel):
     count: int = 12
 
 
+class StructuredNoteGenerationRequest(BaseModel):
+    """Input for `TaskType.STRUCTURED_NOTE_GENERATION` — grounded content to turn into a
+    non-Markdown study aid: "mnemonics"/"timeline" (a JSON list) or "comparison_chart" (a
+    single JSON table). `material_type` is an `app.models.note.NoteMaterialType` value,
+    kept as `str` for the same reason as `NotesGenerationRequest.material_type`.
+    """
+
+    material_type: str
+    topic: str = ""
+    context: str = ""
+    citations: list[Citation] = Field(default_factory=list)
+
+
 class StudioArtifactCreateRequest(BaseModel):
     """Input for `TaskType.STUDIO_ARTIFACT_CREATE`.
 

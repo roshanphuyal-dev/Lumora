@@ -41,6 +41,7 @@ from ai.orchestrator.schemas import (
     NotebookQueryRequest,
     NotesGenerationRequest,
     ProviderName,
+    StructuredNoteGenerationRequest,
     StudioArtifactCreateRequest,
     TeachingExplanationRequest,
 )
@@ -53,6 +54,7 @@ TaskRequest = (
     | ChatResponseRequest
     | NotesGenerationRequest
     | FlashcardGenerationRequest
+    | StructuredNoteGenerationRequest
     | StudioArtifactCreateRequest
 )
 
@@ -87,28 +89,25 @@ async def run_task(
 
     if task_type is TaskType.TEACHING_EXPLANATION:
         if not isinstance(request, TeachingExplanationRequest):
-            raise OrchestrationError(
-                "TEACHING_EXPLANATION requires a TeachingExplanationRequest."
-            )
-        return await _run_teaching_explanation(
-            request, gemini_client, opencode_zen_client
-        )
+            raise OrchestrationError("TEACHING_EXPLANATION requires a TeachingExplanationRequest.")
+        return await _run_teaching_explanation(request, gemini_client, opencode_zen_client)
 
     if task_type is TaskType.NOTES_GENERATION:
         if not isinstance(request, NotesGenerationRequest):
-            raise OrchestrationError(
-                "NOTES_GENERATION requires a NotesGenerationRequest."
-            )
+            raise OrchestrationError("NOTES_GENERATION requires a NotesGenerationRequest.")
         return await _run_notes_generation(request, gemini_client, opencode_zen_client)
 
     if task_type is TaskType.FLASHCARD_GENERATION:
         if not isinstance(request, FlashcardGenerationRequest):
+            raise OrchestrationError("FLASHCARD_GENERATION requires a FlashcardGenerationRequest.")
+        return await _run_flashcard_generation(request, gemini_client, opencode_zen_client)
+
+    if task_type is TaskType.STRUCTURED_NOTE_GENERATION:
+        if not isinstance(request, StructuredNoteGenerationRequest):
             raise OrchestrationError(
-                "FLASHCARD_GENERATION requires a FlashcardGenerationRequest."
+                "STRUCTURED_NOTE_GENERATION requires a StructuredNoteGenerationRequest."
             )
-        return await _run_flashcard_generation(
-            request, gemini_client, opencode_zen_client
-        )
+        return await _run_structured_note_generation(request, gemini_client)
 
     if task_type is TaskType.STUDIO_ARTIFACT_CREATE:
         if not isinstance(request, StudioArtifactCreateRequest):
@@ -128,12 +127,8 @@ async def stream_task(
     opencode_zen_client: OpenCodeZenClient | None = None,
 ) -> AsyncIterator[AIStreamChunk]:
     """Route a streaming task without exposing provider clients to feature code."""
-    if task_type is not TaskType.CHAT_RESPONSE or not isinstance(
-        request, ChatResponseRequest
-    ):
-        raise OrchestrationError(
-            "CHAT_RESPONSE streaming requires a ChatResponseRequest."
-        )
+    if task_type is not TaskType.CHAT_RESPONSE or not isinstance(request, ChatResponseRequest):
+        raise OrchestrationError("CHAT_RESPONSE streaming requires a ChatResponseRequest.")
 
     emitted = False
     try:
@@ -153,20 +148,14 @@ async def stream_task(
 
     # The fallback client does not expose token streaming. Yield its complete response as
     # one SSE delta rather than fabricating token boundaries after generation completes.
-    fallback_context = "\n\n".join(
-        part for part in (request.history, request.context) if part
-    )
+    fallback_context = "\n\n".join(part for part in (request.history, request.context) if part)
     try:
-        content = await (
-            opencode_zen_client or OpenCodeZenClient()
-        ).generate_teaching_explanation(
+        content = await (opencode_zen_client or OpenCodeZenClient()).generate_teaching_explanation(
             question=request.question,
             context=fallback_context,
         )
     except OpenCodeZenError as exc:
-        raise OrchestrationError(
-            f"CHAT_RESPONSE failed on every provider: {exc}"
-        ) from exc
+        raise OrchestrationError(f"CHAT_RESPONSE failed on every provider: {exc}") from exc
     yield AIStreamChunk(content=content, provider=ProviderName.OPENCODE_ZEN)
 
 
@@ -208,9 +197,7 @@ async def _run_notebook_query(
         task_type=TaskType.NOTEBOOK_QUERY,
         provider=ProviderName.NOTEBOOKLM,
         content=result.answer,
-        citations=[
-            Citation(source_id=c.notebooklm_source_id) for c in result.citations
-        ],
+        citations=[Citation(source_id=c.notebooklm_source_id) for c in result.citations],
         metadata={},
     )
 
@@ -265,18 +252,14 @@ async def _run_teaching_explanation(
         errors.append(f"gemini: {exc}")
 
     try:
-        text = await (
-            opencode_zen_client or OpenCodeZenClient()
-        ).generate_teaching_explanation(
+        text = await (opencode_zen_client or OpenCodeZenClient()).generate_teaching_explanation(
             question=request.question, context=request.context
         )
         return _teaching_explanation_response(request, ProviderName.OPENCODE_ZEN, text)
     except OpenCodeZenError as exc:
         errors.append(f"opencode_zen: {exc}")
 
-    raise OrchestrationError(
-        "TEACHING_EXPLANATION failed on every provider: " + "; ".join(errors)
-    )
+    raise OrchestrationError("TEACHING_EXPLANATION failed on every provider: " + "; ".join(errors))
 
 
 def _teaching_explanation_response(
@@ -309,9 +292,9 @@ async def _run_notes_generation(
         material = request.material_type.replace("_", " ")
         framing = f"Create a {material} in Markdown about: {request.topic}"
         try:
-            text = await (
-                opencode_zen_client or OpenCodeZenClient()
-            ).generate_teaching_explanation(question=framing, context=request.context)
+            text = await (opencode_zen_client or OpenCodeZenClient()).generate_teaching_explanation(
+                question=framing, context=request.context
+            )
             provider = ProviderName.OPENCODE_ZEN
         except OpenCodeZenError as fallback_exc:
             errors.append(f"opencode_zen: {fallback_exc}")
@@ -322,6 +305,36 @@ async def _run_notes_generation(
         task_type=TaskType.NOTES_GENERATION,
         provider=provider,
         content=text,
+        citations=request.citations,
+        metadata={},
+    )
+
+
+async def _run_structured_note_generation(
+    request: StructuredNoteGenerationRequest, gemini_client: GeminiClient | None
+) -> AIResponse:
+    """Gemini only, no fallback.
+
+    Unlike every other Gemini-primary task type, this one doesn't fall back to OpenCode
+    Zen on failure: OpenCode Zen has no structured-output API, and best-effort-parsing
+    three different free-text shapes (mnemonics/timeline items vs a comparison-chart
+    table) for a rare failure path isn't worth the fragility — a clean failure (retry the
+    generation) beats a garbled fallback result for structured content a UI will try to
+    render as a list/table.
+    """
+    try:
+        raw_json = await (gemini_client or GeminiClient()).generate_structured_note(
+            material_type=request.material_type,
+            topic=request.topic,
+            context=request.context,
+        )
+    except GeminiError as exc:
+        raise OrchestrationError(f"STRUCTURED_NOTE_GENERATION failed: {exc}") from exc
+
+    return AIResponse(
+        task_type=TaskType.STRUCTURED_NOTE_GENERATION,
+        provider=ProviderName.GEMINI,
+        content=raw_json,
         citations=request.citations,
         metadata={},
     )
@@ -348,14 +361,12 @@ async def _run_flashcard_generation(
             "two-line pairs in the exact form `Q: question` then `A: answer`."
         )
         try:
-            text = await (
-                opencode_zen_client or OpenCodeZenClient()
-            ).generate_teaching_explanation(question=question, context=request.context)
+            text = await (opencode_zen_client or OpenCodeZenClient()).generate_teaching_explanation(
+                question=question, context=request.context
+            )
             items = _parse_fallback_flashcards(text)
             if not items:
-                raise OpenCodeZenError(
-                    "OpenCode Zen returned no parseable Q:/A: pairs."
-                )
+                raise OpenCodeZenError("OpenCode Zen returned no parseable Q:/A: pairs.")
             provider = ProviderName.OPENCODE_ZEN
         except OpenCodeZenError as fallback_exc:
             errors.append(f"opencode_zen: {fallback_exc}")

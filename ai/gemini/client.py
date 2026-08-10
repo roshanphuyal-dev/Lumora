@@ -35,6 +35,12 @@ from ai.prompts.flashcard_generation_v1 import (
 )
 from ai.prompts.note_generation_v1 import SYSTEM_PROMPT as NOTE_SYSTEM_PROMPT
 from ai.prompts.note_generation_v1 import render_user_prompt as render_note_prompt
+from ai.prompts.structured_note_generation_v1 import (
+    SYSTEM_PROMPT as STRUCTURED_NOTE_SYSTEM_PROMPT,
+)
+from ai.prompts.structured_note_generation_v1 import (
+    render_user_prompt as render_structured_note_prompt,
+)
 from ai.prompts.teaching_explanation_v1 import SYSTEM_PROMPT, render_user_prompt
 
 _MODEL_NAME = "gemini-3.5-flash"
@@ -62,6 +68,29 @@ class _FlashcardItemSchema(BaseModel):
 
 class _FlashcardListSchema(RootModel[list[_FlashcardItemSchema]]):
     pass
+
+
+class _StructuredNoteItemSchema(BaseModel):
+    """One `mnemonics`/`timeline` item — label/value/detail per
+    `ai/prompts/structured_note_generation_v1.py`."""
+
+    label: str
+    value: str
+    detail: str
+    citation: _FlashcardCitationSchema | None = None
+
+
+class _StructuredNoteItemListSchema(RootModel[list[_StructuredNoteItemSchema]]):
+    pass
+
+
+class _ComparisonChartSchema(BaseModel):
+    subjects: list[str]
+    attributes: list[str]
+    rows: list[list[str]]
+
+
+_ITEM_LIST_MATERIAL_TYPES = {"mnemonics", "timeline"}
 
 
 class GeminiError(RuntimeError):
@@ -142,6 +171,45 @@ class GeminiClient:
             raise GeminiError(f"Gemini returned invalid flashcards: {exc}") from exc
         except Exception as exc:  # noqa: BLE001 - normalize provider failures
             raise GeminiError(f"Gemini flashcard generation failed: {exc}") from exc
+
+    async def generate_structured_note(
+        self, *, material_type: str, topic: str, context: str
+    ) -> str:
+        """Generate `mnemonics`/`timeline` (a JSON list) or `comparison_chart` (a JSON
+        table) via structured output.
+
+        Returns the raw, schema-validated JSON text, same reasoning as
+        `generate_flashcards` (this client must not import `ai.orchestrator.schemas`) — the
+        orchestrator parses/validates this JSON into `app.models.note`-shaped content.
+        """
+        schema = (
+            _StructuredNoteItemListSchema
+            if material_type in _ITEM_LIST_MATERIAL_TYPES
+            else _ComparisonChartSchema
+        )
+        user_prompt = render_structured_note_prompt(
+            material_type=material_type, topic=topic, context=context
+        )
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=_MODEL_NAME,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=STRUCTURED_NOTE_SYSTEM_PROMPT,
+                    response_mime_type="application/json",
+                    response_schema=schema,
+                ),
+            )
+            if not response.text:
+                raise GeminiError(f"Gemini returned empty {material_type} content.")
+            schema.model_validate_json(response.text)
+            return response.text
+        except GeminiError:
+            raise
+        except (ValidationError, ValueError) as exc:
+            raise GeminiError(f"Gemini returned invalid {material_type} content: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001 - normalize provider failures
+            raise GeminiError(f"Gemini {material_type} generation failed: {exc}") from exc
 
     async def stream_chat_response(
         self, *, question: str, context: str = "", history: str = ""

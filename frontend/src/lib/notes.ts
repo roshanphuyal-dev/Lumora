@@ -1,7 +1,14 @@
 import { apiFetch } from "@/lib/api"
 import type { Page } from "@/lib/notebooks"
 
-export type MaterialType = "note" | "study_guide"
+export type MaterialType =
+  | "note"
+  | "study_guide"
+  | "cheat_sheet"
+  | "formula_sheet"
+  | "mnemonics"
+  | "timeline"
+  | "comparison_chart"
 export type GenerationStatus = "pending" | "generating" | "done" | "failed"
 
 export interface Citation {
@@ -17,6 +24,7 @@ export interface NoteRead {
   status: GenerationStatus
   title: string
   content: string | null
+  content_json: unknown
   citations: Citation[]
   error_message: string | null
   created_at: string
