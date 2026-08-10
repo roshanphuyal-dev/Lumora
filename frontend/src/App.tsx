@@ -7,6 +7,7 @@ import { LoginPage } from "@/pages/LoginPage"
 import { RegisterPage } from "@/pages/RegisterPage"
 import { NotebooksListPage } from "@/pages/NotebooksListPage"
 import { NotebookDetailPage } from "@/pages/NotebookDetailPage"
+import { SettingsPage } from "@/pages/SettingsPage"
 import { AuthProvider } from "@/hooks/use-auth"
 import { ApiError } from "@/lib/api"
 
@@ -47,6 +48,7 @@ function App() {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/notebooks" element={<NotebooksListPage />} />
               <Route path="/notebooks/:id" element={<NotebookDetailPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

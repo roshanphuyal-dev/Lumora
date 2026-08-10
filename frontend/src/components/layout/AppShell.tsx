@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, disabled: false, end: true },
   { to: "/notebooks", label: "Notebooks", icon: NotebookText, disabled: false, end: false },
-  { to: "/settings", label: "Settings", icon: Settings, disabled: true, end: false },
+  { to: "/settings", label: "Settings", icon: Settings, disabled: false, end: false },
 ] as const
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -22,8 +22,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-svh flex-col bg-background text-foreground md:flex-row">
-      {/* Mobile: wordmark + the two real routes as icon buttons, no drawer. Settings stays
-          out entirely until it's a real route -- nothing to spend the icon slot on yet. */}
+      {/* Mobile: wordmark + real routes as icon buttons, no drawer. */}
       <header className="flex items-center justify-between border-b border-border px-4 py-3 md:hidden">
         <span className="font-serif text-lg font-semibold text-foreground">Lumora</span>
         <nav className="flex items-center gap-1">
@@ -51,6 +50,18 @@ export function AppShell({ children }: { children: ReactNode }) {
             }
           >
             <NotebookText className="size-4" aria-hidden="true" />
+          </NavLink>
+          <NavLink
+            to="/settings"
+            aria-label="Settings"
+            className={({ isActive }) =>
+              cn(
+                "flex items-center justify-center rounded-md p-2",
+                isActive ? "text-primary" : "text-foreground/70",
+              )
+            }
+          >
+            <Settings className="size-4" aria-hidden="true" />
           </NavLink>
           <Button variant="ghost" size="icon" aria-label="Log out" onClick={handleSignOut}>
             <LogOut className="size-4" aria-hidden="true" />

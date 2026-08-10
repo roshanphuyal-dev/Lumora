@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { ApiError } from "@/lib/api"
-import { login } from "@/lib/auth"
+import { login, loginWithGoogle } from "@/lib/auth"
 import { useAuth } from "@/hooks/use-auth"
+import { GoogleLoginButton } from "@/components/auth/GoogleLoginButton"
 
 interface LoginFormValues {
   email: string
@@ -26,6 +27,14 @@ export function LoginPage() {
 
   const mutation = useMutation({
     mutationFn: (values: LoginFormValues) => login(values.email, values.password),
+    onSuccess: (tokens) => {
+      signIn(tokens.access_token, tokens.refresh_token)
+      navigate("/", { replace: true })
+    },
+  })
+
+  const googleMutation = useMutation({
+    mutationFn: (idToken: string) => loginWithGoogle(idToken),
     onSuccess: (tokens) => {
       signIn(tokens.access_token, tokens.refresh_token)
       navigate("/", { replace: true })
@@ -68,9 +77,13 @@ export function LoginPage() {
           {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
         </div>
 
-        {mutation.isError && (
+        {(mutation.isError || googleMutation.isError) && (
           <p className="text-sm text-destructive" role="alert">
-            {mutation.error instanceof ApiError ? mutation.error.message : "Something went wrong."}
+            {mutation.error instanceof ApiError
+              ? mutation.error.message
+              : googleMutation.error instanceof ApiError
+                ? googleMutation.error.message
+                : "Something went wrong."}
           </p>
         )}
 
@@ -84,12 +97,7 @@ export function LoginPage() {
           <Separator className="flex-1" />
         </div>
 
-        <Button type="button" variant="outline" disabled title="Google login is coming soon">
-          Continue with Google
-          <span className="ml-auto text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-            Soon
-          </span>
-        </Button>
+        <GoogleLoginButton onIdToken={(idToken) => googleMutation.mutate(idToken)} />
 
         <p className="text-center text-sm text-muted-foreground">
           Don't have an account?{" "}

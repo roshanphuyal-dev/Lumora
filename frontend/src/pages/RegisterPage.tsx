@@ -5,9 +5,11 @@ import { AuthLayout } from "@/components/layout/AuthLayout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Separator } from "@/components/ui/separator"
 import { ApiError } from "@/lib/api"
-import { login, register as registerAccount } from "@/lib/auth"
+import { login, loginWithGoogle, register as registerAccount } from "@/lib/auth"
 import { useAuth } from "@/hooks/use-auth"
+import { GoogleLoginButton } from "@/components/auth/GoogleLoginButton"
 
 interface RegisterFormValues {
   fullName: string
@@ -31,6 +33,14 @@ export function RegisterPage() {
       // so the student lands straight in the product instead of a second form.
       return login(values.email, values.password)
     },
+    onSuccess: (tokens) => {
+      signIn(tokens.access_token, tokens.refresh_token)
+      navigate("/", { replace: true })
+    },
+  })
+
+  const googleMutation = useMutation({
+    mutationFn: (idToken: string) => loginWithGoogle(idToken),
     onSuccess: (tokens) => {
       signIn(tokens.access_token, tokens.refresh_token)
       navigate("/", { replace: true })
@@ -87,15 +97,27 @@ export function RegisterPage() {
           {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
         </div>
 
-        {mutation.isError && (
+        {(mutation.isError || googleMutation.isError) && (
           <p className="text-sm text-destructive" role="alert">
-            {mutation.error instanceof ApiError ? mutation.error.message : "Something went wrong."}
+            {mutation.error instanceof ApiError
+              ? mutation.error.message
+              : googleMutation.error instanceof ApiError
+                ? googleMutation.error.message
+                : "Something went wrong."}
           </p>
         )}
 
         <Button type="submit" disabled={mutation.isPending}>
           {mutation.isPending ? "Creating account…" : "Create account"}
         </Button>
+
+        <div className="flex items-center gap-3">
+          <Separator className="flex-1" />
+          <span className="text-xs text-muted-foreground">or</span>
+          <Separator className="flex-1" />
+        </div>
+
+        <GoogleLoginButton onIdToken={(idToken) => googleMutation.mutate(idToken)} />
 
         <p className="text-center text-sm text-muted-foreground">
           Already have an account?{" "}

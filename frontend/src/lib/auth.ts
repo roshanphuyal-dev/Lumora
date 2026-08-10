@@ -10,6 +10,8 @@ export interface UserRead {
   id: string
   email: string
   full_name: string
+  is_active: boolean
+  created_at: string
 }
 
 export function login(email: string, password: string): Promise<TokenResponse> {
@@ -23,5 +25,12 @@ export function register(email: string, password: string, fullName: string): Pro
   return apiFetch<UserRead>("/auth/register", {
     method: "POST",
     body: JSON.stringify({ email, password, full_name: fullName }),
+  })
+}
+
+export function loginWithGoogle(idToken: string): Promise<TokenResponse> {
+  return apiFetch<TokenResponse>("/auth/google", {
+    method: "POST",
+    body: JSON.stringify({ id_token: idToken }),
   })
 }
