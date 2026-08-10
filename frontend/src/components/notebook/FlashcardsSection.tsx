@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { CheckCircle2, ChevronDown, ChevronRight, Clock, Layers3, Loader2, Trash2, XCircle } from "lucide-react"
+import { useMemo, useState } from "react"
+import { CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Layers3, Loader2, RotateCw, Trash2, XCircle } from "lucide-react"
 import { useForm } from "react-hook-form"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { useCreateFlashcardSet, useDeleteFlashcardSet, useFlashcardSets } from "@/hooks/use-flashcard-sets"
 import { ApiError } from "@/lib/api"
-import type { FlashcardSetRead } from "@/lib/flashcards"
+import type { FlashcardRead, FlashcardSetRead } from "@/lib/flashcards"
 import type { GenerationStatus } from "@/lib/notes"
 
 const STATUS_META: Record<GenerationStatus, { icon: typeof Clock; label: string; className: string }> = {
@@ -21,6 +21,78 @@ interface FlashcardFormValues { title: string; topic: string; count: string }
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback
+}
+
+function FlashcardDeck({ cards }: { cards: FlashcardRead[] }) {
+  const sorted = useMemo(() => [...cards].sort((a, b) => a.position - b.position), [cards])
+  const [index, setIndex] = useState(0)
+  const [flipped, setFlipped] = useState(false)
+  const card = sorted[index]
+
+  function goTo(next: number) {
+    setIndex(Math.max(0, Math.min(sorted.length - 1, next)))
+    setFlipped(false)
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent) {
+    if (event.key === "ArrowRight") {
+      event.preventDefault()
+      goTo(index + 1)
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault()
+      goTo(index - 1)
+    }
+  }
+
+  if (!card) return null
+
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <button
+        type="button"
+        onClick={() => setFlipped((value) => !value)}
+        onKeyDown={handleKeyDown}
+        aria-label={flipped ? "Showing answer. Press to show question." : "Showing question. Press to show answer."}
+        className="w-full max-w-md [perspective:1200px] focus-visible:outline-none"
+      >
+        <div
+          className={`relative h-56 w-full transition-transform duration-500 ease-out motion-reduce:transition-none [transform-style:preserve-3d] ${flipped ? "[transform:rotateY(180deg)]" : ""}`}
+        >
+          <div
+            aria-hidden={flipped}
+            className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-xl border border-border bg-card p-6 shadow-sm [backface-visibility:hidden]"
+          >
+            <span className="text-xs font-medium text-muted-foreground">Question · Card {index + 1} of {sorted.length}</span>
+            <p className="max-w-sm text-center font-serif text-base text-foreground">{card.front}</p>
+            <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><RotateCw className="size-3" aria-hidden="true" /> Click to flip</span>
+          </div>
+          <div
+            aria-hidden={!flipped}
+            className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/5 p-6 shadow-sm [backface-visibility:hidden] [transform:rotateY(180deg)]"
+          >
+            <span className="text-xs font-medium text-muted-foreground">Answer</span>
+            <p className="max-w-sm text-center font-serif text-base text-foreground">{card.back}</p>
+            {card.citation && (
+              <div className="mt-2 max-w-sm rounded-md bg-background/60 p-2 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">Source {card.citation.source_id}</span>
+                {card.citation.excerpt && <span className="mt-0.5 block">“{card.citation.excerpt}”</span>}
+              </div>
+            )}
+          </div>
+        </div>
+      </button>
+
+      <div className="flex w-full max-w-md items-center justify-between">
+        <Button type="button" variant="outline" size="sm" onClick={() => goTo(index - 1)} disabled={index === 0}>
+          <ChevronLeft className="size-4" aria-hidden="true" /> Prev
+        </Button>
+        <span className="text-xs text-muted-foreground" aria-live="polite">{index + 1} / {sorted.length}</span>
+        <Button type="button" variant="outline" size="sm" onClick={() => goTo(index + 1)} disabled={index === sorted.length - 1}>
+          Next <ChevronRight className="size-4" aria-hidden="true" />
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 function FlashcardSetRow({ set, notebookId }: { set: FlashcardSetRead; notebookId: string }) {
@@ -54,15 +126,9 @@ function FlashcardSetRow({ set, notebookId }: { set: FlashcardSetRead; notebookI
       {set.status === "failed" && set.error_message && <p className="px-9 pb-2.5 text-xs text-destructive" role="alert">{set.error_message}</p>}
       {deleteMutation.isError && <p className="px-9 pb-2.5 text-xs text-destructive" role="alert">{errorMessage(deleteMutation.error, "Couldn't delete this flashcard set.")}</p>}
       {expanded && (
-        <ol className="border-t border-border px-4 py-4">
-          {[...set.flashcards].sort((a, b) => a.position - b.position).map((card, index) => (
-            <li key={card.id} className="grid gap-3 py-4 first:pt-0 last:pb-0 sm:grid-cols-2">
-              <div><p className="mb-1 text-xs font-medium text-muted-foreground">Card {index + 1} · Front</p><p className="font-serif text-sm text-foreground">{card.front}</p></div>
-              <div><p className="mb-1 text-xs font-medium text-muted-foreground">Back</p><p className="font-serif text-sm text-foreground">{card.back}</p>{card.citation && <div className="mt-3 rounded-md bg-muted/50 p-2 text-xs text-muted-foreground"><span className="font-medium text-foreground">Source {card.citation.source_id}</span>{card.citation.excerpt && <span className="mt-0.5 block">“{card.citation.excerpt}”</span>}</div>}</div>
-              {index < set.flashcards.length - 1 && <Separator className="sm:col-span-2" />}
-            </li>
-          ))}
-        </ol>
+        <div className="border-t border-border px-4 py-4">
+          <FlashcardDeck cards={set.flashcards} />
+        </div>
       )}
     </div>
   )

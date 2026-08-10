@@ -5,6 +5,21 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Lumora</title>
+    <script>
+      // Applies the persisted theme before first paint so there's no light-mode flash
+      // on a dark-mode reload. Mirrors frontend/src/hooks/use-theme.tsx's applyTheme --
+      // keep both in sync if the storage keys or resolution logic change.
+      (function () {
+        try {
+          var mode = localStorage.getItem("lumora.theme-mode")
+          var accent = localStorage.getItem("lumora.theme-accent")
+          var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
+          var dark = mode === "dark" || (mode !== "light" && prefersDark)
+          if (dark) document.documentElement.classList.add("dark")
+          if (accent && accent !== "emerald") document.documentElement.setAttribute("data-accent", accent)
+        } catch (e) {}
+      })()
+    </script>
   </head>
   <body>
     <!--

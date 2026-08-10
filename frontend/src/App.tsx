@@ -9,6 +9,7 @@ import { NotebooksListPage } from "@/pages/NotebooksListPage"
 import { NotebookDetailPage } from "@/pages/NotebookDetailPage"
 import { SettingsPage } from "@/pages/SettingsPage"
 import { AuthProvider } from "@/hooks/use-auth"
+import { ThemeProvider } from "@/hooks/use-theme"
 import { ApiError } from "@/lib/api"
 
 const queryClient = new QueryClient({
@@ -38,22 +39,24 @@ function ProtectedLayout() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route element={<ProtectedLayout />}>
-              <Route path="/" element={<DashboardPage />} />
-              <Route path="/notebooks" element={<NotebooksListPage />} />
-              <Route path="/notebooks/:id" element={<NotebookDetailPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Route>
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route element={<ProtectedLayout />}>
+                <Route path="/" element={<DashboardPage />} />
+                <Route path="/notebooks" element={<NotebooksListPage />} />
+                <Route path="/notebooks/:id" element={<NotebookDetailPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+              </Route>
+            </Routes>
+          </BrowserRouter>
+        </AuthProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   )
 }
 

@@ -121,6 +121,62 @@
     --sidebar-ring: oklch(0.696 0.17 162.48);
 }
 
+/* Accent themes (Settings > Appearance). Only override the brand-color tokens
+   (--primary*/--ring/--sidebar-primary*/--sidebar-ring) -- --accent/--accent-foreground
+   are shadcn's neutral hover-state tokens, a different concept, left untouched.
+   Selector specificity ties with :root/.dark on <html> itself; source order after
+   them is what makes these win. */
+[data-accent="blue"] {
+    --primary: oklch(0.546 0.245 262.881);
+    --primary-foreground: oklch(0.985 0 0);
+    --ring: oklch(0.546 0.245 262.881);
+    --sidebar-primary: oklch(0.546 0.245 262.881);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-ring: oklch(0.546 0.245 262.881);
+}
+.dark[data-accent="blue"] {
+    --primary: oklch(0.623 0.214 259.815);
+    --primary-foreground: oklch(0.145 0 0);
+    --ring: oklch(0.623 0.214 259.815);
+    --sidebar-primary: oklch(0.623 0.214 259.815);
+    --sidebar-primary-foreground: oklch(0.145 0 0);
+    --sidebar-ring: oklch(0.623 0.214 259.815);
+}
+
+[data-accent="purple"] {
+    --primary: oklch(0.541 0.281 293.009);
+    --primary-foreground: oklch(0.985 0 0);
+    --ring: oklch(0.541 0.281 293.009);
+    --sidebar-primary: oklch(0.541 0.281 293.009);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-ring: oklch(0.541 0.281 293.009);
+}
+.dark[data-accent="purple"] {
+    --primary: oklch(0.606 0.25 292.717);
+    --primary-foreground: oklch(0.145 0 0);
+    --ring: oklch(0.606 0.25 292.717);
+    --sidebar-primary: oklch(0.606 0.25 292.717);
+    --sidebar-primary-foreground: oklch(0.145 0 0);
+    --sidebar-ring: oklch(0.606 0.25 292.717);
+}
+
+[data-accent="rose"] {
+    --primary: oklch(0.586 0.253 17.585);
+    --primary-foreground: oklch(0.985 0 0);
+    --ring: oklch(0.586 0.253 17.585);
+    --sidebar-primary: oklch(0.586 0.253 17.585);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-ring: oklch(0.586 0.253 17.585);
+}
+.dark[data-accent="rose"] {
+    --primary: oklch(0.645 0.246 16.439);
+    --primary-foreground: oklch(0.145 0 0);
+    --ring: oklch(0.645 0.246 16.439);
+    --sidebar-primary: oklch(0.645 0.246 16.439);
+    --sidebar-primary-foreground: oklch(0.145 0 0);
+    --sidebar-ring: oklch(0.645 0.246 16.439);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
