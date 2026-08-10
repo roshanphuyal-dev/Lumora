@@ -1,0 +1,3 @@
+allowBuilds:
+  # core-js's postinstall script is just a sponsorship notice, no build step needed.
+  core-js: false

@@ -27,7 +27,7 @@ Tracks *when* things get built, in phase order, with enough granularity to know 
 
 ### Phase 2 — Study Materials (Status: Not Started)
 - Notes, study guides, flashcards
-- AI chat (basic Q&A grounded in notebook)
+- AI chat (basic Q&A grounded in notebook) — streaming + persisted history architecture pre-specified in [ADR 0009](adr/0009-ai-chat-streaming-persistence-export.md)
 - Knowledge base UI (notebook/source management)
 
 ### Phase 3 — Assessment (Status: Not Started)

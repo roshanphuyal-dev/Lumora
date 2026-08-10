@@ -123,7 +123,7 @@ export function NotebookDetailPage() {
             </TabsContent>
 
             <TabsContent value="ask" className="pt-3">
-              <AskNotebookSection notebookId={notebookId} />
+              <AskNotebookSection notebookId={notebookId} notebookName={notebook.name} />
             </TabsContent>
           </Tabs>
         </>
