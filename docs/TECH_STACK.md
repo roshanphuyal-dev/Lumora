@@ -29,7 +29,7 @@ PostgreSQL (Supabase), `pgvector` for embeddings.
 Supabase Storage.
 
 ### AI Layer
-- Primary tutor: Gemini 2.5 Flash
+- Primary tutor: Gemini 3.5 Flash
 - Secondary/fallback: OpenRouter (DeepSeek, Qwen)
 - Knowledge engine: NotebookLM CLI / MCP Server
 - Embeddings: Gemini Embeddings, Jina Embeddings

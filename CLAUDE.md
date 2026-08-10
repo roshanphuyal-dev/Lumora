@@ -19,7 +19,7 @@ Full vision: `docs/PROJECT_PLAN.md`. Architecture: `docs/ARCHITECTURE.md`. Roadm
 Frontend: React + Vite + TypeScript, Tailwind, shadcn/ui, React Router, TanStack Query, Framer Motion, React Hook Form.
 Backend: FastAPI + Python, SQLAlchemy, Celery + Redis, JWT auth.
 Data: PostgreSQL (Supabase) + pgvector, Supabase Storage.
-AI: Gemini 2.5 Flash (primary tutor), OpenRouter/DeepSeek/Qwen (fallback + cheap tasks), NotebookLM (knowledge engine), Tavily/Brave (search).
+AI: Gemini 3.5 Flash (primary tutor), OpenRouter/DeepSeek/Qwen (fallback + cheap tasks), NotebookLM (knowledge engine), Tavily/Brave (search).
 Deploy: Oracle Cloud VPS, Docker, Nginx, GitHub Actions.
 
 Full detail: `docs/TECH_STACK.md`.

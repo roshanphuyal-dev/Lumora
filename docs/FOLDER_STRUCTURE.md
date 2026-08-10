@@ -61,7 +61,7 @@ backend/
 ```
 ai/
 ├── orchestrator/      # task_types.py (TaskType enum), schemas.py, orchestrator.py (run_task)
-├── gemini/            # client.py — real google-genai call (Gemini 2.5 Flash)
+├── gemini/            # client.py — real google-genai call (Gemini 3.5 Flash)
 ├── notebooklm/        # client.py — typed interface, CLI/MCP call still stubbed (always raises)
 └── prompts/           # teaching_explanation_v1.py
 ```

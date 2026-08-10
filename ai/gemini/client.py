@@ -1,9 +1,15 @@
 """Gemini provider client (ADR 0005).
 
 The only place `google.genai` is imported (.claude/rules/ai.md) — nothing outside `ai/`
-should import it directly. Wraps Gemini 2.5 Flash for the orchestrator's
+should import it directly. Wraps Gemini 3.5 Flash for the orchestrator's
 `TaskType.TEACHING_EXPLANATION` task; the orchestrator (`ai/orchestrator/`) is the only
 intended caller.
+
+Model ID history: `gemini-2.5-flash` was retired for new/unused API keys ahead of its
+official Oct 2026 shutdown date (Google returns 404 NOT_FOUND with "no longer available
+to new users"). Confirmed live against `generativelanguage.googleapis.com` on 2026-08-10
+that `gemini-3.5-flash` is the current stable flash-tier model that still serves this
+project's key — see `docs/AI.md#model-roster--responsibilities`.
 """
 
 from __future__ import annotations
@@ -15,7 +21,7 @@ from google.genai import types
 
 from ai.prompts.teaching_explanation_v1 import SYSTEM_PROMPT, render_user_prompt
 
-_MODEL_NAME = "gemini-2.5-flash"
+_MODEL_NAME = "gemini-3.5-flash"
 
 
 class GeminiError(RuntimeError):
