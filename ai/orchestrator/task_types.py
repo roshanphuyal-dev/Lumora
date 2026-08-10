@@ -32,3 +32,12 @@ class TaskType(enum.StrEnum):
     # Flashcard set generation, grounded in NotebookLM retrieval -> Gemini structures the
     # retrieved content into a JSON front/back/citation list (Routing Logic step 1 + 2).
     FLASHCARD_GENERATION = "flashcard_generation"
+
+    # NotebookLM Studio artifact generation (audio/report/slides/infographic/mindmap/
+    # data_table) -> NotebookLM only, no Gemini synthesis step and no fallback (nothing
+    # else can do this). Only the generation-trigger call goes through the orchestrator;
+    # the resulting poll/download steps are direct NotebookLMClient calls in the Celery
+    # task (app/workers/studio_tasks.py), same precedent as ensure_remote_notebook in
+    # app/workers/notebook_tasks.py -- bookkeeping/retrieval on an already-triggered job,
+    # not a new "AI does something" call.
+    STUDIO_ARTIFACT_CREATE = "studio_artifact_create"

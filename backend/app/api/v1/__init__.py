@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import auth, chat, courses, documents, flashcards, notebooks, notes, users
+from app.api.v1 import auth, chat, courses, documents, flashcards, notebooks, notes, studio, users
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
@@ -11,3 +11,4 @@ api_router.include_router(notebooks.router)
 api_router.include_router(chat.router)
 api_router.include_router(notes.router)
 api_router.include_router(flashcards.router)
+api_router.include_router(studio.router)

@@ -11,7 +11,16 @@ from app.core.config import get_settings
 # imports the task modules it needs (below), each touching a couple of models directly, and
 # SQLAlchemy can't resolve a cross-table FK (e.g. documents.subject_id -> subjects.id) for a
 # model whose module never got imported in this process. Same pattern as backend/tests/conftest.py.
-from app.models import chat, course, document, flashcard, note, notebook, user  # noqa: F401
+from app.models import (  # noqa: F401
+    chat,
+    course,
+    document,
+    flashcard,
+    generated_material,
+    note,
+    notebook,
+    user,
+)
 
 settings = get_settings()
 
@@ -24,6 +33,7 @@ celery_app = Celery(
         "app.workers.notebook_tasks",
         "app.workers.note_tasks",
         "app.workers.flashcard_tasks",
+        "app.workers.studio_tasks",
     ],
 )
 

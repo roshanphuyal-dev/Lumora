@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from app.models.chat import Conversation
     from app.models.document import Document
     from app.models.flashcard import FlashcardSet
+    from app.models.generated_material import GeneratedMaterial
     from app.models.note import Note
 
 
@@ -57,6 +58,9 @@ class Notebook(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="notebook", cascade="all, delete-orphan"
     )
     flashcard_sets: Mapped[list["FlashcardSet"]] = relationship(
+        back_populates="notebook", cascade="all, delete-orphan"
+    )
+    generated_materials: Mapped[list["GeneratedMaterial"]] = relationship(
         back_populates="notebook", cascade="all, delete-orphan"
     )
 

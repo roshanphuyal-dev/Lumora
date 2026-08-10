@@ -13,6 +13,7 @@ import { AskNotebookSection } from "@/components/notebook/AskNotebookSection"
 import { ResourceDialog } from "@/components/notebook/ResourceDialog"
 import { NotesSection } from "@/components/notebook/NotesSection"
 import { FlashcardsSection } from "@/components/notebook/FlashcardsSection"
+import { StudioSection } from "@/components/notebook/StudioSection"
 import type { IndexingStatus } from "@/lib/notebooks"
 
 const STATUS_META: Record<IndexingStatus, { icon: typeof Clock; label: string; className: string }> = {
@@ -62,11 +63,12 @@ export function NotebookDetailPage() {
           </header>
 
           <Tabs defaultValue="resources">
-            <TabsList>
+            <TabsList className="max-w-full justify-start overflow-x-auto">
               <TabsTrigger value="resources">Resources</TabsTrigger>
               <TabsTrigger value="ask">Ask</TabsTrigger>
               <TabsTrigger value="notes">Notes</TabsTrigger>
               <TabsTrigger value="flashcards">Flashcards</TabsTrigger>
+              <TabsTrigger value="studio">Studio</TabsTrigger>
             </TabsList>
 
             <TabsContent value="resources" className="flex flex-col gap-3 pt-3">
@@ -136,6 +138,10 @@ export function NotebookDetailPage() {
 
             <TabsContent value="flashcards" className="pt-3">
               <FlashcardsSection notebookId={notebookId} />
+            </TabsContent>
+
+            <TabsContent value="studio" className="pt-3">
+              <StudioSection notebookId={notebookId} />
             </TabsContent>
           </Tabs>
         </>

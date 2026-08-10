@@ -56,10 +56,54 @@ class NotebookQueryResult:
     citations: list[QuerySourceCitation]
 
 
+@dataclass(frozen=True)
+class StudioArtifactCreateResult:
+    """Result of kicking off one Studio artifact generation.
+
+    Every type except `mindmap` is async: `status` comes back `"unknown"` and the caller
+    must poll `get_studio_artifact_status` (live-tested 2026-08-10: `report` settled in
+    ~6s, `infographic` in ~90s — `audio`/`slides`/`data_table` untested but expected
+    slower, especially `audio`). `mindmap` is the one exception: `nlm mindmap create`
+    returns the finished result inline (`mind_map_json` populated, `status="completed"`)
+    with nothing to poll or download.
+    """
+
+    notebooklm_artifact_id: str
+    status: str
+    mind_map_json: str | None = None
+
+
+# Lumora's own `MaterialArtifactType` values -> the CLI's `create`-group command name.
+# One-to-one except `data_table`, which needs a hyphen the enum value doesn't have.
+_STUDIO_CREATE_COMMAND: dict[str, str] = {
+    "audio": "audio",
+    "report": "report",
+    "slides": "slides",
+    "infographic": "infographic",
+    "mindmap": "mindmap",
+    "data_table": "data-table",
+}
+
+# -> the CLI's `download`-group command name. Confirmed live (2026-08-10) that this
+# differs from the create-group name for `slides` ("slide-deck") and `mindmap`
+# ("mind-map", per `nlm --ai`'s reference -- not live-tested since mindmap never needs
+# downloading, its result is already inline from `create`).
+_STUDIO_DOWNLOAD_COMMAND: dict[str, str] = {
+    "audio": "audio",
+    "report": "report",
+    "slides": "slide-deck",
+    "infographic": "infographic",
+    "mindmap": "mind-map",
+    "data_table": "data-table",
+}
+
+
 class NotebookLMClient:
     """Thin async wrapper around the `nlm` CLI for notebook/source management."""
 
-    async def ensure_remote_notebook(self, *, notebooklm_notebook_id: str | None, name: str) -> str:
+    async def ensure_remote_notebook(
+        self, *, notebooklm_notebook_id: str | None, name: str
+    ) -> str:
         """Return a remote NotebookLM notebook id, creating one via `nlm` if needed.
 
         If `notebooklm_notebook_id` is already set (i.e. a `Notebook` row already has a
@@ -122,7 +166,9 @@ class NotebookLMClient:
                 f"nlm source add --file {file_path!r} exited 0 with --json but no source "
                 f"id was found in its output: {stdout!r}"
             )
-        return DocumentIndexResult(notebooklm_source_id=source_id, status=_extract_status(payload))
+        return DocumentIndexResult(
+            notebooklm_source_id=source_id, status=_extract_status(payload)
+        )
 
     async def query_notebook(
         self, *, notebooklm_notebook_id: str, question: str
@@ -135,8 +181,12 @@ class NotebookLMClient:
         "citation_number": int}, ...], ...}`. Missing `answer` is treated as a malformed
         response (`nlm` only returns 0/no-error-JSON once it has a real answer to give).
         """
-        stdout = await _run_nlm("notebook", "query", notebooklm_notebook_id, question, "--json")
-        payload = _parse_json(stdout, context=f"nlm notebook query {notebooklm_notebook_id!r}")
+        stdout = await _run_nlm(
+            "notebook", "query", notebooklm_notebook_id, question, "--json"
+        )
+        payload = _parse_json(
+            stdout, context=f"nlm notebook query {notebooklm_notebook_id!r}"
+        )
 
         answer = payload.get("answer")
         if not isinstance(answer, str) or not answer:
@@ -151,9 +201,144 @@ class NotebookLMClient:
                 citation_number=reference.get("citation_number"),
             )
             for reference in payload.get("references", [])
-            if isinstance(reference, dict) and isinstance(reference.get("source_id"), str)
+            if isinstance(reference, dict)
+            and isinstance(reference.get("source_id"), str)
         ]
         return NotebookQueryResult(answer=answer, citations=citations)
+
+    async def create_studio_artifact(
+        self,
+        *,
+        notebooklm_notebook_id: str,
+        artifact_type: str,
+        options: dict[str, str | int],
+    ) -> StudioArtifactCreateResult:
+        """Kick off generating one Studio artifact (audio/report/slides/infographic/
+        mindmap/data_table) from a notebook's indexed sources.
+
+        `artifact_type` must be a `MaterialArtifactType` value (this module doesn't import
+        backend models, so it takes the plain string). `options` becomes `--key value`
+        flags (underscores in keys become hyphens, e.g. `{"orientation": "portrait"}` ->
+        `--orientation portrait`) -- which keys are meaningful is a per-type contract
+        `nlm --ai` documents (e.g. audio: format/length/focus/language; infographic:
+        orientation/detail); this method doesn't validate them, the caller (backend schema
+        layer) does. `data_table` is the one exception: it needs `options["description"]`
+        as a required *positional* argument, not a flag (`nlm data-table create <nb>
+        "<description>" --confirm`), enforced here since silently dropping it would be a
+        confusing 100%-of-the-time failure for that type.
+
+        Every type runs `nlm <command> create <notebooklm_notebook_id> [flags] --confirm
+        --json`. `mindmap` returns its full result inline (see
+        `StudioArtifactCreateResult`); every other type returns `status: "unknown"` and
+        must be polled via `get_studio_artifact_status`.
+        """
+        command = _STUDIO_CREATE_COMMAND.get(artifact_type)
+        if command is None:
+            raise NotebookLMError(f"Unknown Studio artifact_type: {artifact_type!r}")
+
+        args = [command, "create", notebooklm_notebook_id]
+        if artifact_type == "data_table":
+            description = options.get("description")
+            if not description:
+                raise NotebookLMError(
+                    "data_table artifacts require options['description']."
+                )
+            args.append(str(description))
+        for key, value in options.items():
+            if artifact_type == "data_table" and key == "description":
+                continue
+            args.extend([f"--{key.replace('_', '-')}", str(value)])
+        args.extend(["--confirm", "--json"])
+
+        stdout = await _run_nlm(*args)
+        payload = _parse_json(
+            stdout, context=f"nlm {command} create {notebooklm_notebook_id!r}"
+        )
+        artifact_id = _extract_id(payload, keys=("artifact_id", "id"))
+        if artifact_id is None:
+            raise NotebookLMError(
+                f"nlm {command} create {notebooklm_notebook_id!r} exited 0 with --json but "
+                f"no artifact id was found in its output: {stdout!r}"
+            )
+
+        mind_map_json = payload.get("mind_map_json")
+        mind_map_json = mind_map_json if isinstance(mind_map_json, str) else None
+        status = payload.get("status")
+        if not isinstance(status, str) or not status:
+            # mindmap's response has no "status" key at all (docstring above) -- its
+            # presence in the payload is itself the completion signal.
+            status = "completed" if mind_map_json is not None else "unknown"
+
+        return StudioArtifactCreateResult(
+            notebooklm_artifact_id=artifact_id,
+            status=status,
+            mind_map_json=mind_map_json,
+        )
+
+    async def get_studio_artifact_status(
+        self, *, notebooklm_notebook_id: str, artifact_id: str
+    ) -> str:
+        """Poll one artifact's generation status.
+
+        Runs `nlm studio status <notebooklm_notebook_id> --json`, which -- unlike every
+        other `--json` call in this module -- returns a JSON *array* of every artifact in
+        the notebook (confirmed live 2026-08-10: `[{"id", "artifact_id", "type",
+        "status", ...}, ...]`), not a single object. Returns that artifact's `status`
+        string (e.g. `"unknown"`, `"completed"`, `"failed"`).
+        """
+        stdout = await _run_nlm("studio", "status", notebooklm_notebook_id, "--json")
+        try:
+            payload = json.loads(stdout)
+        except json.JSONDecodeError as exc:
+            raise NotebookLMError(
+                f"nlm studio status {notebooklm_notebook_id!r}: exited 0 but stdout was not "
+                f"valid JSON: {stdout!r}"
+            ) from exc
+        if not isinstance(payload, list):
+            raise NotebookLMError(
+                f"nlm studio status {notebooklm_notebook_id!r}: expected a JSON array, got: "
+                f"{stdout!r}"
+            )
+
+        for entry in payload:
+            if isinstance(entry, dict) and entry.get("artifact_id") == artifact_id:
+                status = entry.get("status")
+                return status if isinstance(status, str) and status else "unknown"
+
+        raise NotebookLMError(
+            f"nlm studio status {notebooklm_notebook_id!r}: artifact {artifact_id!r} not "
+            f"found in the status list: {stdout!r}"
+        )
+
+    async def download_studio_artifact(
+        self,
+        *,
+        notebooklm_notebook_id: str,
+        artifact_type: str,
+        artifact_id: str,
+        output_path: str,
+    ) -> None:
+        """Download a completed artifact's file to `output_path` on local disk.
+
+        Runs `nlm download <command> <notebooklm_notebook_id> --id <artifact_id> --output
+        <output_path>`. Only call this once `get_studio_artifact_status` has returned
+        `"completed"` -- `mindmap` never needs this (its result is already inline from
+        `create_studio_artifact`). Like `index_document`, this doesn't manage
+        `output_path` itself: the caller creates and later cleans up the temp file.
+        """
+        command = _STUDIO_DOWNLOAD_COMMAND.get(artifact_type)
+        if command is None:
+            raise NotebookLMError(f"Unknown Studio artifact_type: {artifact_type!r}")
+
+        await _run_nlm(
+            "download",
+            command,
+            notebooklm_notebook_id,
+            "--id",
+            artifact_id,
+            "--output",
+            output_path,
+        )
 
 
 async def _run_nlm(*args: str) -> str:
@@ -216,7 +401,9 @@ def _parse_json(stdout: str, *, context: str) -> dict:
         )
 
     if payload.get("error") or payload.get("status") == "error":
-        raise NotebookLMError(f"{context}: nlm reported failure in its JSON output: {stdout!r}")
+        raise NotebookLMError(
+            f"{context}: nlm reported failure in its JSON output: {stdout!r}"
+        )
 
     return payload
 

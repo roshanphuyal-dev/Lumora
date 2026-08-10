@@ -32,7 +32,9 @@ Notebook creation, source management, multi-document indexing, citation manageme
 Chunking, embeddings, context retrieval, RAG, NotebookLM retrieval, prompt builder, AI routing, AI generation. See `docs/AI.md`.
 
 ### Study Material Generator (Phase 2)
-Notes (detailed/revision), study guides, mind maps, flashcards, cheat sheets, formula sheets, mnemonics/memory tricks, timelines, tables, comparison charts, infographics, slides, reports, audio summaries.
+Done: Notes (detailed/revision) and study guides, flashcards (Gemini-authored, grounded via NotebookLM retrieval), mind maps, infographics, slide decks, reports, audio summaries, and data tables (NotebookLM Studio-authored — see `docs/AI.md`/`docs/API.md`'s Studio API).
+
+Not started: cheat sheets, formula sheets, mnemonics/memory tricks, timelines, comparison charts — none of these map to a NotebookLM Studio artifact type, so they'd need a dedicated Gemini-based pipeline (like Notes/Flashcards) if picked up.
 
 ### Quiz Generator (Phase 3)
 MCQ, true/false, fill-in-blank, matching, assertion/reason, short answer, long answer, case studies, scenario questions, adaptive difficulty.
@@ -50,7 +52,7 @@ Ask questions, explain simply/deeply, generate examples, follow-ups, Socratic te
 Current information, recent studies, images, references, external resources, research paper search, fact verification.
 
 ### Overleaf Export (Phase 2+)
-LaTeX notes, assignments, reports, formula sheets, tables, figures.
+LaTeX notes, assignments, reports, formula sheets, tables, figures. Not started — distinct from the plain PDF export already shipped for AI Chat (client-side, from the rendered DOM, `frontend/src/lib/chat-export.ts`), which is a generic conversation export, not a LaTeX/Overleaf pipeline for generated study materials.
 
 ### Progress Tracking (Phase 3–4)
 Daily study time, quiz scores, topic mastery, weakness detection, learning streak, revision history.

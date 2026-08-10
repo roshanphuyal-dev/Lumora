@@ -11,6 +11,7 @@ from app.models import (  # noqa: F401 -- register models with Base.metadata
     course,
     document,
     flashcard,
+    generated_material,
     note,
     notebook,
     user,

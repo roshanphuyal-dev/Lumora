@@ -133,3 +133,17 @@ class FlashcardGenerationRequest(BaseModel):
     context: str = ""
     citations: list[Citation] = Field(default_factory=list)
     count: int = 12
+
+
+class StudioArtifactCreateRequest(BaseModel):
+    """Input for `TaskType.STUDIO_ARTIFACT_CREATE`.
+
+    `artifact_type` is a `app.models.generated_material.MaterialArtifactType` value, kept
+    as a plain `str` here for the same reason as `NotesGenerationRequest.material_type`
+    (`ai/` doesn't import backend model enums). `options` is passed through to
+    `ai.notebooklm.client.NotebookLMClient.create_studio_artifact` verbatim.
+    """
+
+    artifact_type: str
+    notebooklm_notebook_id: str
+    options: dict[str, str | int] = Field(default_factory=dict)

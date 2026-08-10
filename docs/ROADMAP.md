@@ -31,8 +31,9 @@ Verified end-to-end against a running backend + real providers (no stubs remaini
 - Notes, study guides, flashcards — done, async generation grounded via NotebookLM + Gemini (structured output for flashcards), per `docs/AI_WORKFLOWS.md#1`/`#2`
 - AI chat (basic Q&A grounded in notebook) — done, per [ADR 0009](adr/0009-ai-chat-streaming-persistence-export.md)
 - Knowledge base UI (notebook/source management and notebook search) — done
+- NotebookLM Studio artifacts (audio overview, report, slide deck, infographic, mind map, data table) — done, additive scope beyond this phase's original gate, closing most of the `docs/FEATURES.md` "Study Material Generator" catalogue via NotebookLM's own Studio feature rather than a custom pipeline; see `docs/FEATURES.md` for what's still unbuilt (cheat sheets/formula sheets/mnemonics/timelines/comparison charts — none map to a Studio artifact type)
 
-Verified end-to-end against a running backend + real providers (Postgres, Redis/Celery, live Gemini calls) — see the Definition of Done note below.
+Verified end-to-end against a running backend + real providers (Postgres, Redis/Celery, live Gemini calls, live NotebookLM Studio generation) — see the Definition of Done note below.
 
 ### Phase 3 — Assessment (Status: Not Started)
 - Quiz generation (all question types)

@@ -48,6 +48,12 @@ The contract reference for the FastAPI backend: endpoint groups, auth model, ver
   - `GET /notebooks/{id}/flashcard-sets` — paginated list.
   - `GET /notebooks/{id}/flashcard-sets/{set_id}` — detail including nested `flashcards` (empty until `status=done`); the poll target.
   - `DELETE /notebooks/{id}/flashcard-sets/{set_id}`.
+- **Studio API** (`/api/v1/notebooks/{notebook_id}/studio`, scoped to `user_id`; async generation, poll for status; NotebookLM-only, no ungrounded fallback — 409 if the notebook has no indexed source):
+  - `POST /notebooks/{id}/studio` — body `{artifact_type: "audio"|"report"|"slides"|"infographic"|"mindmap"|"data_table", title?, format?, length?, focus?, language?, prompt?, orientation?, detail?, description?}` (which fields apply depends on `artifact_type`; `description` is required for `data_table`, 422 otherwise); creates the row (`status=pending`) and dispatches generation.
+  - `GET /notebooks/{id}/studio` — paginated list.
+  - `GET /notebooks/{id}/studio/{material_id}` — detail; the poll target. `content` (Markdown/JSON) populates for `report`/`mindmap`; `has_download` flips true for the other four once `done` — never exposes the internal storage path.
+  - `GET /notebooks/{id}/studio/{material_id}/download` — streams the generated file (audio/slides/infographic/data_table only) with `Content-Disposition: attachment`, auth-scoped.
+  - `DELETE /notebooks/{id}/studio/{material_id}`.
 - **Quiz API** — generate, fetch, submit attempts.
 - **Search API** — internet search proxy (Tavily/Brave), cached.
 - **Image API** — image retrieval proxy (Wikimedia/Openverse/Unsplash), cached.
