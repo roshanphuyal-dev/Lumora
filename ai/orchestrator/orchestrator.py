@@ -22,7 +22,10 @@ Later phases add more task types and routing branches per the same table — ext
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
+
+from pydantic import TypeAdapter, ValidationError
 
 from ai.gemini.client import GeminiClient, GeminiError
 from ai.notebooklm.client import NotebookLMClient, NotebookLMError
@@ -33,14 +36,22 @@ from ai.orchestrator.schemas import (
     ChatResponseRequest,
     Citation,
     DocumentIndexRequest,
+    FlashcardGenerationRequest,
+    FlashcardItem,
     NotebookQueryRequest,
+    NotesGenerationRequest,
     ProviderName,
     TeachingExplanationRequest,
 )
 from ai.orchestrator.task_types import TaskType
 
 TaskRequest = (
-    DocumentIndexRequest | NotebookQueryRequest | TeachingExplanationRequest | ChatResponseRequest
+    DocumentIndexRequest
+    | NotebookQueryRequest
+    | TeachingExplanationRequest
+    | ChatResponseRequest
+    | NotesGenerationRequest
+    | FlashcardGenerationRequest
 )
 
 
@@ -76,6 +87,16 @@ async def run_task(
         if not isinstance(request, TeachingExplanationRequest):
             raise OrchestrationError("TEACHING_EXPLANATION requires a TeachingExplanationRequest.")
         return await _run_teaching_explanation(request, gemini_client, opencode_zen_client)
+
+    if task_type is TaskType.NOTES_GENERATION:
+        if not isinstance(request, NotesGenerationRequest):
+            raise OrchestrationError("NOTES_GENERATION requires a NotesGenerationRequest.")
+        return await _run_notes_generation(request, gemini_client, opencode_zen_client)
+
+    if task_type is TaskType.FLASHCARD_GENERATION:
+        if not isinstance(request, FlashcardGenerationRequest):
+            raise OrchestrationError("FLASHCARD_GENERATION requires a FlashcardGenerationRequest.")
+        return await _run_flashcard_generation(request, gemini_client, opencode_zen_client)
 
     raise OrchestrationError(f"No routing rule for task_type={task_type!r}.")
 
@@ -209,3 +230,94 @@ def _teaching_explanation_response(
         citations=request.citations,
         metadata={},
     )
+
+
+async def _run_notes_generation(
+    request: NotesGenerationRequest,
+    gemini_client: GeminiClient | None,
+    opencode_zen_client: OpenCodeZenClient | None,
+) -> AIResponse:
+    errors: list[str] = []
+    try:
+        text = await (gemini_client or GeminiClient()).generate_notes(
+            material_type=request.material_type, topic=request.topic, context=request.context
+        )
+        provider = ProviderName.GEMINI
+    except GeminiError as exc:
+        errors.append(f"gemini: {exc}")
+        material = request.material_type.replace("_", " ")
+        framing = f"Create a {material} in Markdown about: {request.topic}"
+        try:
+            text = await (opencode_zen_client or OpenCodeZenClient()).generate_teaching_explanation(
+                question=framing, context=request.context
+            )
+            provider = ProviderName.OPENCODE_ZEN
+        except OpenCodeZenError as fallback_exc:
+            errors.append(f"opencode_zen: {fallback_exc}")
+            raise OrchestrationError(
+                "NOTES_GENERATION failed on every provider: " + "; ".join(errors)
+            ) from fallback_exc
+    return AIResponse(
+        task_type=TaskType.NOTES_GENERATION,
+        provider=provider,
+        content=text,
+        citations=request.citations,
+        metadata={},
+    )
+
+
+async def _run_flashcard_generation(
+    request: FlashcardGenerationRequest,
+    gemini_client: GeminiClient | None,
+    opencode_zen_client: OpenCodeZenClient | None,
+) -> AIResponse:
+    errors: list[str] = []
+    try:
+        raw_json = await (gemini_client or GeminiClient()).generate_flashcards(
+            topic=request.topic, context=request.context, count=request.count
+        )
+        items = TypeAdapter(list[FlashcardItem]).validate_json(raw_json)
+        provider = ProviderName.GEMINI
+    except (GeminiError, ValidationError) as exc:
+        errors.append(f"gemini: {exc}")
+        # OpenCode Zen has no structured-output API. Its Q:/A: text is best-effort parsed;
+        # this degraded-quality state is currently visible only through AIResponse.provider.
+        question = (
+            f"Create {request.count} flashcards about {request.topic}. Output only repeated "
+            "two-line pairs in the exact form `Q: question` then `A: answer`."
+        )
+        try:
+            text = await (opencode_zen_client or OpenCodeZenClient()).generate_teaching_explanation(
+                question=question, context=request.context
+            )
+            items = _parse_fallback_flashcards(text)
+            if not items:
+                raise OpenCodeZenError("OpenCode Zen returned no parseable Q:/A: pairs.")
+            provider = ProviderName.OPENCODE_ZEN
+        except OpenCodeZenError as fallback_exc:
+            errors.append(f"opencode_zen: {fallback_exc}")
+            raise OrchestrationError(
+                "FLASHCARD_GENERATION failed on every provider: " + "; ".join(errors)
+            ) from fallback_exc
+    return AIResponse(
+        task_type=TaskType.FLASHCARD_GENERATION,
+        provider=provider,
+        content=json.dumps([item.model_dump() for item in items]),
+        citations=request.citations,
+        metadata={},
+    )
+
+
+def _parse_fallback_flashcards(text: str) -> list[FlashcardItem]:
+    items: list[FlashcardItem] = []
+    front: str | None = None
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("Q:"):
+            front = line[2:].strip()
+        elif line.startswith("A:") and front:
+            back = line[2:].strip()
+            if back:
+                items.append(FlashcardItem(front=front, back=back))
+            front = None
+    return items

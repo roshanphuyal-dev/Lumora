@@ -13,6 +13,8 @@ from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin
 if TYPE_CHECKING:
     from app.models.chat import Conversation
     from app.models.document import Document
+    from app.models.flashcard import FlashcardSet
+    from app.models.note import Note
 
 
 class NotebookSourceIndexStatus(enum.StrEnum):
@@ -49,6 +51,12 @@ class Notebook(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="notebook", cascade="all, delete-orphan"
     )
     conversations: Mapped[list["Conversation"]] = relationship(
+        back_populates="notebook", cascade="all, delete-orphan"
+    )
+    notes: Mapped[list["Note"]] = relationship(
+        back_populates="notebook", cascade="all, delete-orphan"
+    )
+    flashcard_sets: Mapped[list["FlashcardSet"]] = relationship(
         back_populates="notebook", cascade="all, delete-orphan"
     )
 

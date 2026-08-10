@@ -24,3 +24,11 @@ class TaskType(enum.StrEnum):
     # Multi-turn notebook chat -> Gemini token stream, with OpenCode Zen fallback
     # only if Gemini fails before emitting its first token.
     CHAT_RESPONSE = "chat_response"
+
+    # Notes/study guide generation, grounded in NotebookLM retrieval -> Gemini structures
+    # the retrieved content into markdown (Routing Logic step 1 + 2, docs/AI.md).
+    NOTES_GENERATION = "notes_generation"
+
+    # Flashcard set generation, grounded in NotebookLM retrieval -> Gemini structures the
+    # retrieved content into a JSON front/back/citation list (Routing Logic step 1 + 2).
+    FLASHCARD_GENERATION = "flashcard_generation"

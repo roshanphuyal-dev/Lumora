@@ -38,8 +38,17 @@ The contract reference for the FastAPI backend: endpoint groups, auth model, ver
   - `GET /notebooks/{id}/conversations/{conversation_id}/messages` — full message history (`MessageRead[]`, includes `role`, `content`, `provider`, `citations`).
   - `POST /notebooks/{id}/conversations/{conversation_id}/messages/stream` — send a message; returns `text/event-stream` (SSE). Events: `start` (persisted user message + assistant message id), `delta` (incremental assistant content, one per provider chunk), `done` (final persisted assistant `MessageRead`), `error` (stream failed, nothing persisted for the assistant turn). Routes through the orchestration layer (`TaskType.CHAT_RESPONSE`, Gemini streaming with OpenCode Zen non-streaming fallback); grounds against NotebookLM when the notebook has an indexed source.
 - **AI API** — explain, generate (routes to orchestration layer per `docs/AI.md`).
+- **Notes API** (`/api/v1/notebooks/{notebook_id}/notes`, scoped to `user_id` = authenticated user; async generation, poll for status):
+  - `POST /notebooks/{id}/notes` — body `{material_type: "note" | "study_guide", title?, topic?}`; creates the row (`status=pending`) and dispatches generation (Celery), returning immediately — generation itself isn't in the request/response cycle.
+  - `GET /notebooks/{id}/notes` — paginated list (`limit`/`offset`), most recently created first.
+  - `GET /notebooks/{id}/notes/{note_id}` — detail; the poll target (`status`: `pending` → `generating` → `done`/`failed`; `content`/`citations` populate once `done`).
+  - `DELETE /notebooks/{id}/notes/{note_id}`.
+- **Flashcards API** (`/api/v1/notebooks/{notebook_id}/flashcard-sets`, same scoping/async-poll shape as the Notes API):
+  - `POST /notebooks/{id}/flashcard-sets` — body `{title?, topic?, count?}` (`count` defaults to 12); creates the set (`status=pending`) and dispatches generation.
+  - `GET /notebooks/{id}/flashcard-sets` — paginated list.
+  - `GET /notebooks/{id}/flashcard-sets/{set_id}` — detail including nested `flashcards` (empty until `status=done`); the poll target.
+  - `DELETE /notebooks/{id}/flashcard-sets/{set_id}`.
 - **Quiz API** — generate, fetch, submit attempts.
-- **Notes API** / **Study Guide API** — generate/fetch generated materials.
 - **Search API** — internet search proxy (Tavily/Brave), cached.
 - **Image API** — image retrieval proxy (Wikimedia/Openverse/Unsplash), cached.
 - **Progress API** — study stats, streaks, mastery.

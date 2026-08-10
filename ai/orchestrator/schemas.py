@@ -101,3 +101,35 @@ class AIStreamChunk(BaseModel):
 
     content: str
     provider: ProviderName
+
+
+class NotesGenerationRequest(BaseModel):
+    """Input for `TaskType.NOTES_GENERATION` — grounded NotebookLM content to structure.
+
+    `material_type` is `"note"` or `"study_guide"` (`app.models.note.NoteMaterialType`,
+    kept as a plain `str` here so `ai/` doesn't import backend model enums).
+    """
+
+    material_type: str
+    topic: str = ""
+    context: str = ""
+    citations: list[Citation] = Field(default_factory=list)
+
+
+class FlashcardItem(BaseModel):
+    """One generated flashcard — the structured-output contract Gemini must satisfy."""
+
+    front: str
+    back: str
+    citation: Citation | None = None
+
+
+class FlashcardGenerationRequest(BaseModel):
+    """Input for `TaskType.FLASHCARD_GENERATION` — grounded NotebookLM content to turn
+    into a flashcard set.
+    """
+
+    topic: str = ""
+    context: str = ""
+    citations: list[Citation] = Field(default_factory=list)
+    count: int = 12

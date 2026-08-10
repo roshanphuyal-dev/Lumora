@@ -30,7 +30,7 @@ The catalogue of actual prompt templates used across the AI pipelines — the co
 | Template | Target Model | Used By | Output Shape |
 |---|---|---|---|
 | `note_generation` | Gemini | Notes/Study Guide workflow | structured markdown |
-| `flashcard_generation` | Gemini + NotebookLM | Flashcards workflow | JSON list `{front, back, source_citation}` |
+| `flashcard_generation` | Gemini + NotebookLM | Flashcards workflow | JSON list `{front, back, citation}` (structured output, `response_schema`) |
 | `quiz_generation` | Gemini | Quiz workflow | JSON list of question objects |
 | `quiz_grading` | Gemini | Evaluation workflow | JSON `{score, mistakes[], feedback}` |
 | `chat_response` | Gemini | AI Chat workflow | markdown + citations |

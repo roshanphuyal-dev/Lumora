@@ -19,6 +19,7 @@ from collections.abc import AsyncIterator
 
 from google import genai
 from google.genai import types
+from pydantic import BaseModel, RootModel, ValidationError
 
 from ai.prompts.chat_response_v1 import (
     SYSTEM_PROMPT as CHAT_SYSTEM_PROMPT,
@@ -26,9 +27,41 @@ from ai.prompts.chat_response_v1 import (
 from ai.prompts.chat_response_v1 import (
     render_user_prompt as render_chat_prompt,
 )
+from ai.prompts.flashcard_generation_v1 import (
+    SYSTEM_PROMPT as FLASHCARD_SYSTEM_PROMPT,
+)
+from ai.prompts.flashcard_generation_v1 import (
+    render_user_prompt as render_flashcard_prompt,
+)
+from ai.prompts.note_generation_v1 import SYSTEM_PROMPT as NOTE_SYSTEM_PROMPT
+from ai.prompts.note_generation_v1 import render_user_prompt as render_note_prompt
 from ai.prompts.teaching_explanation_v1 import SYSTEM_PROMPT, render_user_prompt
 
 _MODEL_NAME = "gemini-3.5-flash"
+
+
+class _FlashcardCitationSchema(BaseModel):
+    """Mirrors `ai.orchestrator.schemas.Citation`'s shape.
+
+    Duplicated rather than imported: `ai.orchestrator` imports this module (the orchestrator
+    calls the provider client, never the reverse), so importing orchestrator types here would
+    be a circular import. The orchestrator re-validates this client's raw JSON output into its
+    own `FlashcardItem`/`Citation` types before returning an `AIResponse`.
+    """
+
+    source_id: str
+    chunk_id: str | None = None
+    excerpt: str | None = None
+
+
+class _FlashcardItemSchema(BaseModel):
+    front: str
+    back: str
+    citation: _FlashcardCitationSchema | None = None
+
+
+class _FlashcardListSchema(RootModel[list[_FlashcardItemSchema]]):
+    pass
 
 
 class GeminiError(RuntimeError):
@@ -64,6 +97,51 @@ class GeminiClient:
         if not text:
             raise GeminiError("Gemini returned an empty response.")
         return text
+
+    async def generate_notes(self, *, material_type: str, topic: str, context: str) -> str:
+        """Structure optional grounded context into Markdown notes or a study guide."""
+        user_prompt = render_note_prompt(material_type=material_type, topic=topic, context=context)
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=_MODEL_NAME,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(system_instruction=NOTE_SYSTEM_PROMPT),
+            )
+        except Exception as exc:  # noqa: BLE001 - normalize provider failures
+            raise GeminiError(f"Gemini note generation failed: {exc}") from exc
+        if not response.text:
+            raise GeminiError("Gemini returned empty notes.")
+        return response.text
+
+    async def generate_flashcards(self, *, topic: str, context: str, count: int) -> str:
+        """Generate a JSON array of `{front, back, citation}` flashcards via structured output.
+
+        Returns the raw, schema-validated JSON text rather than parsed `FlashcardItem`
+        objects — this client must not import `ai.orchestrator.schemas` (see
+        `_FlashcardItemSchema`'s docstring); the orchestrator parses/validates this JSON
+        into its own `FlashcardItem` type.
+        """
+        user_prompt = render_flashcard_prompt(topic=topic, context=context, count=count)
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=_MODEL_NAME,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=FLASHCARD_SYSTEM_PROMPT,
+                    response_mime_type="application/json",
+                    response_schema=_FlashcardListSchema,
+                ),
+            )
+            if not response.text:
+                raise GeminiError("Gemini returned empty flashcards.")
+            _FlashcardListSchema.model_validate_json(response.text)
+            return response.text
+        except GeminiError:
+            raise
+        except (ValidationError, ValueError) as exc:
+            raise GeminiError(f"Gemini returned invalid flashcards: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001 - normalize provider failures
+            raise GeminiError(f"Gemini flashcard generation failed: {exc}") from exc
 
     async def stream_chat_response(
         self, *, question: str, context: str = "", history: str = ""

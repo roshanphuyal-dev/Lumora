@@ -11,6 +11,8 @@ import { useDetachSource } from "@/hooks/use-detach-source"
 import { DeleteNotebookButton } from "@/components/notebook/DeleteNotebookButton"
 import { AskNotebookSection } from "@/components/notebook/AskNotebookSection"
 import { ResourceDialog } from "@/components/notebook/ResourceDialog"
+import { NotesSection } from "@/components/notebook/NotesSection"
+import { FlashcardsSection } from "@/components/notebook/FlashcardsSection"
 import type { IndexingStatus } from "@/lib/notebooks"
 
 const STATUS_META: Record<IndexingStatus, { icon: typeof Clock; label: string; className: string }> = {
@@ -63,6 +65,8 @@ export function NotebookDetailPage() {
             <TabsList>
               <TabsTrigger value="resources">Resources</TabsTrigger>
               <TabsTrigger value="ask">Ask</TabsTrigger>
+              <TabsTrigger value="notes">Notes</TabsTrigger>
+              <TabsTrigger value="flashcards">Flashcards</TabsTrigger>
             </TabsList>
 
             <TabsContent value="resources" className="flex flex-col gap-3 pt-3">
@@ -124,6 +128,14 @@ export function NotebookDetailPage() {
 
             <TabsContent value="ask" className="pt-3">
               <AskNotebookSection notebookId={notebookId} notebookName={notebook.name} />
+            </TabsContent>
+
+            <TabsContent value="notes" className="pt-3">
+              <NotesSection notebookId={notebookId} />
+            </TabsContent>
+
+            <TabsContent value="flashcards" className="pt-3">
+              <FlashcardsSection notebookId={notebookId} />
             </TabsContent>
           </Tabs>
         </>
