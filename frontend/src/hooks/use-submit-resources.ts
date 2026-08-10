@@ -26,11 +26,11 @@ export function isResourceFilled(resource: ResourceDraft): boolean {
   return resource.kind === "file" ? resource.file !== null : resource.url.trim() !== ""
 }
 
-// Shared by "create a notebook with resources" (NotebooksListPage) and "add a
-// resource to an existing notebook" (NotebookDetailPage's Resources tab) --
-// same upload -> poll-parse -> attach sequence either way, only whether a
-// notebook gets created first differs. No combined backend endpoint exists
-// (see use-upload-source.ts), so this orchestrates client-side same as that.
+// Shared by "create a notebook with resources" (NotebooksListPage, DashboardPage)
+// and "add a resource to an existing notebook" (NotebookDetailPage's Resources
+// tab) -- same upload -> poll-parse -> attach sequence either way, only whether
+// a notebook gets created first differs. No combined backend endpoint exists,
+// so this orchestrates the sequence client-side.
 export function useSubmitResources() {
   const queryClient = useQueryClient()
   const [stage, setStage] = useState<SubmitStage | null>(null)

@@ -35,7 +35,7 @@ Tracks *when* things get built, in phase order, with enough granularity to know 
 - Quiz engine (timer, navigation, autosave, review)
 - AI evaluation (scoring, feedback, weak-topic tagging)
 - Internet search integration (Tavily/Brave)
-- Image retrieval (Wikimedia/Openverse/Unsplash)
+- Image retrieval (Wikimedia/Openverse/Unsplash) — architecture pre-specified in [ADR 0010](adr/0010-topic-image-retrieval.md)
 
 ### Phase 4 — Personalization (Status: Not Started)
 - Full RAG pipeline across notebooks

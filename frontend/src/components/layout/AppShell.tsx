@@ -1,6 +1,6 @@
-import type { ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import { NavLink, useNavigate } from "react-router-dom"
-import { LayoutDashboard, LogOut, NotebookText, Settings } from "lucide-react"
+import { LayoutDashboard, LogOut, NotebookText, PanelLeft, Settings } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/hooks/use-auth"
 import { Button } from "@/components/ui/button"
@@ -11,9 +11,18 @@ const NAV_ITEMS = [
   { to: "/settings", label: "Settings", icon: Settings, disabled: false, end: false },
 ] as const
 
+const SIDEBAR_COLLAPSED_KEY = "lumora.sidebar-collapsed"
+
 export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const { signOut } = useAuth()
+  // Persisted like the dark-mode preference described in docs/UI_UX.md --
+  // a per-user layout choice, not session-only state.
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true")
+
+  useEffect(() => {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed))
+  }, [collapsed])
 
   function handleSignOut() {
     signOut()
@@ -68,8 +77,15 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Button>
         </nav>
       </header>
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-border px-3 py-4 md:flex">
-        <div className="px-2 pb-6 font-serif text-lg font-semibold text-foreground">Lumora</div>
+      <aside
+        className={cn(
+          "hidden shrink-0 flex-col overflow-hidden border-r border-border py-4 transition-all duration-200 md:flex",
+          collapsed ? "w-0 border-r-0 px-0" : "w-60 px-3",
+        )}
+      >
+        <div className="px-2 pb-6 font-serif text-lg font-semibold whitespace-nowrap text-foreground">
+          Lumora
+        </div>
         <nav className="flex flex-1 flex-col gap-1">
           {NAV_ITEMS.map(({ to, label, icon: Icon, disabled, end }) =>
             disabled ? (
@@ -113,7 +129,18 @@ export function AppShell({ children }: { children: ReactNode }) {
           Log out
         </button>
       </aside>
-      <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
+      <main className="relative min-w-0 flex-1 overflow-y-auto">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={collapsed ? "Show sidebar" : "Hide sidebar"}
+          onClick={() => setCollapsed((prev) => !prev)}
+          className="absolute top-3 left-3 z-10 hidden md:flex"
+        >
+          <PanelLeft className="size-4" aria-hidden="true" />
+        </Button>
+        {children}
+      </main>
     </div>
   )
 }

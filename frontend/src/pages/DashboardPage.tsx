@@ -1,7 +1,8 @@
-import { Target, TrendingUp, Flame } from "lucide-react"
+import { Plus, Target, TrendingUp, Flame } from "lucide-react"
+import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { NotebooksSection } from "@/components/dashboard/NotebooksSection"
-import { UploadSourceCard } from "@/components/dashboard/UploadSourceCard"
+import { ResourceDialog } from "@/components/notebook/ResourceDialog"
 
 // Phase 1 supports upload + notebooks only (docs/ROADMAP.md). Weak topics, learning
 // progress, and streaks depend on quiz/evaluation (Phase 3-4) and have no real backend
@@ -20,11 +21,21 @@ export function DashboardPage() {
       <header className="flex flex-col gap-1">
         <h1 className="font-serif text-2xl font-semibold text-foreground">Welcome to Lumora</h1>
         <p className="text-sm text-muted-foreground">
-          Upload your first source to start turning it into study material.
+          Create a notebook to start turning your material into study resources.
         </p>
       </header>
 
-      <UploadSourceCard />
+      <ResourceDialog
+        mode="create"
+        trigger={
+          <Card className="cursor-pointer border-dashed transition-colors hover:bg-accent">
+            <CardContent className="flex flex-row items-center justify-center gap-2 py-6 text-sm font-medium text-muted-foreground">
+              <Plus className="size-4" aria-hidden="true" />
+              New notebook
+            </CardContent>
+          </Card>
+        }
+      />
 
       <NotebooksSection />
 
