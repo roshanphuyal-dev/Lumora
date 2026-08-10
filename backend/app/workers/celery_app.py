@@ -11,7 +11,7 @@ from app.core.config import get_settings
 # imports the task modules it needs (below), each touching a couple of models directly, and
 # SQLAlchemy can't resolve a cross-table FK (e.g. documents.subject_id -> subjects.id) for a
 # model whose module never got imported in this process. Same pattern as backend/tests/conftest.py.
-from app.models import course, document, notebook, user  # noqa: F401
+from app.models import chat, course, document, notebook, user  # noqa: F401
 
 settings = get_settings()
 

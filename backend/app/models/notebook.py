@@ -11,6 +11,7 @@ from app.db.session import Base
 from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
+    from app.models.chat import Conversation
     from app.models.document import Document
 
 
@@ -45,6 +46,9 @@ class Notebook(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     notebooklm_notebook_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     sources: Mapped[list["NotebookSource"]] = relationship(
+        back_populates="notebook", cascade="all, delete-orphan"
+    )
+    conversations: Mapped[list["Conversation"]] = relationship(
         back_populates="notebook", cascade="all, delete-orphan"
     )
 

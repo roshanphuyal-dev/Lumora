@@ -20,3 +20,7 @@ class TaskType(enum.StrEnum):
 
     # Teaching, explanation, pedagogical judgment → Gemini (Routing Logic step 2, docs/AI.md).
     TEACHING_EXPLANATION = "teaching_explanation"
+
+    # Multi-turn notebook chat -> Gemini token stream, with OpenCode Zen fallback
+    # only if Gemini fails before emitting its first token.
+    CHAT_RESPONSE = "chat_response"

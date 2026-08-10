@@ -15,10 +15,17 @@ project's key — see `docs/AI.md#model-roster--responsibilities`.
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncIterator
 
 from google import genai
 from google.genai import types
 
+from ai.prompts.chat_response_v1 import (
+    SYSTEM_PROMPT as CHAT_SYSTEM_PROMPT,
+)
+from ai.prompts.chat_response_v1 import (
+    render_user_prompt as render_chat_prompt,
+)
 from ai.prompts.teaching_explanation_v1 import SYSTEM_PROMPT, render_user_prompt
 
 _MODEL_NAME = "gemini-3.5-flash"
@@ -57,3 +64,20 @@ class GeminiClient:
         if not text:
             raise GeminiError("Gemini returned an empty response.")
         return text
+
+    async def stream_chat_response(
+        self, *, question: str, context: str = "", history: str = ""
+    ) -> AsyncIterator[str]:
+        """Stream a multi-turn chat answer as provider-generated text fragments."""
+        user_prompt = render_chat_prompt(question=question, context=context, history=history)
+        try:
+            stream = await self._client.aio.models.generate_content_stream(
+                model=_MODEL_NAME,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(system_instruction=CHAT_SYSTEM_PROMPT),
+            )
+            async for response in stream:
+                if response.text:
+                    yield response.text
+        except Exception as exc:  # noqa: BLE001 - normalize provider failures
+            raise GeminiError(f"Gemini streaming generation failed: {exc}") from exc

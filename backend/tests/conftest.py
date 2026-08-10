@@ -11,6 +11,7 @@ from app.core.config import get_settings
 from app.db.session import Base, get_db
 from app.main import app
 from app.models import (  # noqa: F401 -- register all models with Base.metadata
+    chat,
     course,
     document,
     notebook,

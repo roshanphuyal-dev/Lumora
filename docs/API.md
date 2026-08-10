@@ -30,16 +30,20 @@ The contract reference for the FastAPI backend: endpoint groups, auth model, ver
   - `POST /notebooks`, `GET /notebooks` (paginated; optional case-insensitive `search` across name and description), `GET /notebooks/{id}` (detail includes attached `sources`), `DELETE /notebooks/{id}`.
   - `POST /notebooks/{id}/sources` — attach a `document_id` as a source; requires the document's `parse_status == done` (409 otherwise); dispatches NotebookLM indexing (Celery) and returns the source with `indexing_status=pending`.
   - `DELETE /notebooks/{id}/sources/{source_id}` — detach a source.
-  - `POST /notebooks/{id}/ask` — plain (ungrounded) teaching-explanation question via the orchestration layer (Gemini, OpenCode Zen fallback, ADR 0008); returns `{content, provider}`. Not RAG-grounded yet (no `citations` in the response) — see the **AI API** row below for the grounded version once RAG lands (`docs/ROADMAP.md` Phase 4).
+  - `POST /notebooks/{id}/ask` — plain (ungrounded) teaching-explanation question via the orchestration layer (Gemini, OpenCode Zen fallback, ADR 0008); returns `{content, provider}`. Single-turn, not persisted — superseded for multi-turn use by the Chat API below; kept for now as the simple one-shot path.
 - **Notebook Search API** — semantic search within a notebook.
-- **AI API** — chat, explain, generate (routes to orchestration layer per `docs/AI.md`).
+- **Chat API** (`/api/v1/notebooks/{notebook_id}/conversations`, scoped to `user_id` = authenticated user; streaming + persistence architecture per ADR 0009):
+  - `POST /notebooks/{id}/conversations` — create a conversation (optional `title`); returns `ConversationRead`.
+  - `GET /notebooks/{id}/conversations` — list the user's conversations for the notebook, most recently updated first.
+  - `GET /notebooks/{id}/conversations/{conversation_id}/messages` — full message history (`MessageRead[]`, includes `role`, `content`, `provider`, `citations`).
+  - `POST /notebooks/{id}/conversations/{conversation_id}/messages/stream` — send a message; returns `text/event-stream` (SSE). Events: `start` (persisted user message + assistant message id), `delta` (incremental assistant content, one per provider chunk), `done` (final persisted assistant `MessageRead`), `error` (stream failed, nothing persisted for the assistant turn). Routes through the orchestration layer (`TaskType.CHAT_RESPONSE`, Gemini streaming with OpenCode Zen non-streaming fallback); grounds against NotebookLM when the notebook has an indexed source.
+- **AI API** — explain, generate (routes to orchestration layer per `docs/AI.md`).
 - **Quiz API** — generate, fetch, submit attempts.
 - **Notes API** / **Study Guide API** — generate/fetch generated materials.
 - **Search API** — internet search proxy (Tavily/Brave), cached.
 - **Image API** — image retrieval proxy (Wikimedia/Openverse/Unsplash), cached.
 - **Progress API** — study stats, streaks, mastery.
 - **Analytics API** — performance graphs, heatmaps.
-- **Chat API** — AI chat history/threads.
 - **Export API** — Overleaf/LaTeX/PDF/DOCX/Markdown export.
 
 ### Conventions

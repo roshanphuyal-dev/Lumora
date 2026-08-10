@@ -47,11 +47,20 @@ export const ChatMessage = memo(function ChatMessage({
         {!isUser && message.citations && message.citations.length > 0 && (
           <ul className="mt-2 flex flex-col gap-1 border-l-2 border-border pl-2">
             {message.citations.map((citation, index) => (
-              <li key={citation.chunk_id ?? `${citation.source_id}-${index}`} className="text-xs text-muted-foreground">
-                {citation.excerpt ? `"${citation.excerpt}"` : `Source ${citation.source_id}`}
+              <li key={citation.chunk_id ?? `${citation.source_id ?? "citation"}-${index}`} className="text-xs text-muted-foreground">
+                {citation.excerpt
+                  ? `"${citation.excerpt}"`
+                  : citation.source_id
+                    ? `Source ${citation.source_id}`
+                    : "Notebook source"}
               </li>
             ))}
           </ul>
+        )}
+        {!isUser && message.error && (
+          <p className="mt-2 text-sm text-destructive" role="alert">
+            {message.error}
+          </p>
         )}
       </div>
     </div>

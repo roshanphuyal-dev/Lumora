@@ -85,3 +85,19 @@ class TeachingExplanationRequest(BaseModel):
     question: str
     context: str = ""
     citations: list[Citation] = Field(default_factory=list)
+
+
+class ChatResponseRequest(BaseModel):
+    """Latest question plus bounded history and optional NotebookLM grounding."""
+
+    question: str
+    context: str = ""
+    history: str = ""
+    citations: list[Citation] = Field(default_factory=list)
+
+
+class AIStreamChunk(BaseModel):
+    """One normalized text fragment from a streaming orchestration task."""
+
+    content: str
+    provider: ProviderName

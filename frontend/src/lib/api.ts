@@ -22,6 +22,19 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   }))
 }
 
+// Streaming endpoints need the authenticated Response body itself rather than parsed JSON.
+// Keep URL construction, JWT attachment, and silent token refresh centralized here too.
+export function apiFetchResponse(path: string, init?: RequestInit): Promise<Response> {
+  return requestResponseWithRefresh(path, () => ({
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeader(),
+      ...init?.headers,
+    },
+  }))
+}
+
 // Multipart upload: no Content-Type header -- the browser sets it (with the
 // multipart boundary) from the FormData body. Setting it manually breaks the
 // boundary and the backend can't parse the request.
@@ -40,17 +53,27 @@ export async function apiFetchForm<T>(path: string, formData: FormData): Promise
 // the (possibly just-refreshed) access token fresh on the retry, not the one captured
 // before the refresh happened.
 async function requestWithRefresh<T>(path: string, buildInit: () => RequestInit): Promise<T> {
+  return handleResponse<T>(await requestResponseWithRefresh(path, buildInit))
+}
+
+async function requestResponseWithRefresh(
+  path: string,
+  buildInit: () => RequestInit,
+): Promise<Response> {
   const response = await fetchOrThrow(path, buildInit())
 
   if (response.status === 401) {
     const refreshed = await refreshAccessToken()
     if (refreshed) {
-      return handleResponse<T>(await fetchOrThrow(path, buildInit()))
+      const retryResponse = await fetchOrThrow(path, buildInit())
+      if (!retryResponse.ok) await throwResponseError(retryResponse)
+      return retryResponse
     }
     clearTokens()
   }
 
-  return handleResponse<T>(response)
+  if (!response.ok) await throwResponseError(response)
+  return response
 }
 
 // fetch() rejects (TypeError, not an HTTP response) when the server can't be reached at
@@ -107,14 +130,14 @@ function authHeader(): Record<string, string> {
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    throw new ApiError(response.status, await extractErrorMessage(response))
-  }
-
   // 204 No Content (every DELETE endpoint) has no body -- .json() would throw on it.
   if (response.status === 204) return undefined as T
 
   return response.json() as Promise<T>
+}
+
+async function throwResponseError(response: Response): Promise<never> {
+  throw new ApiError(response.status, await extractErrorMessage(response))
 }
 
 // FastAPI's default error body is `{"detail": "..."}`, or `{"detail": [{"msg": ...}, ...]}`

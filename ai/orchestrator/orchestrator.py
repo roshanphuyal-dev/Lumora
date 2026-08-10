@@ -22,11 +22,15 @@ Later phases add more task types and routing branches per the same table — ext
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 from ai.gemini.client import GeminiClient, GeminiError
 from ai.notebooklm.client import NotebookLMClient, NotebookLMError
 from ai.opencode_zen.client import OpenCodeZenClient, OpenCodeZenError
 from ai.orchestrator.schemas import (
     AIResponse,
+    AIStreamChunk,
+    ChatResponseRequest,
     Citation,
     DocumentIndexRequest,
     NotebookQueryRequest,
@@ -35,7 +39,9 @@ from ai.orchestrator.schemas import (
 )
 from ai.orchestrator.task_types import TaskType
 
-TaskRequest = DocumentIndexRequest | NotebookQueryRequest | TeachingExplanationRequest
+TaskRequest = (
+    DocumentIndexRequest | NotebookQueryRequest | TeachingExplanationRequest | ChatResponseRequest
+)
 
 
 class OrchestrationError(RuntimeError):
@@ -72,6 +78,46 @@ async def run_task(
         return await _run_teaching_explanation(request, gemini_client, opencode_zen_client)
 
     raise OrchestrationError(f"No routing rule for task_type={task_type!r}.")
+
+
+async def stream_task(
+    task_type: TaskType,
+    request: ChatResponseRequest,
+    *,
+    gemini_client: GeminiClient | None = None,
+    opencode_zen_client: OpenCodeZenClient | None = None,
+) -> AsyncIterator[AIStreamChunk]:
+    """Route a streaming task without exposing provider clients to feature code."""
+    if task_type is not TaskType.CHAT_RESPONSE or not isinstance(request, ChatResponseRequest):
+        raise OrchestrationError("CHAT_RESPONSE streaming requires a ChatResponseRequest.")
+
+    emitted = False
+    try:
+        async for content in (gemini_client or GeminiClient()).stream_chat_response(
+            question=request.question,
+            context=request.context,
+            history=request.history,
+        ):
+            emitted = True
+            yield AIStreamChunk(content=content, provider=ProviderName.GEMINI)
+        if not emitted:
+            raise GeminiError("Gemini returned an empty response stream.")
+        return
+    except GeminiError as gemini_error:
+        if emitted:
+            raise OrchestrationError(str(gemini_error)) from gemini_error
+
+    # The fallback client does not expose token streaming. Yield its complete response as
+    # one SSE delta rather than fabricating token boundaries after generation completes.
+    fallback_context = "\n\n".join(part for part in (request.history, request.context) if part)
+    try:
+        content = await (opencode_zen_client or OpenCodeZenClient()).generate_teaching_explanation(
+            question=request.question,
+            context=fallback_context,
+        )
+    except OpenCodeZenError as exc:
+        raise OrchestrationError(f"CHAT_RESPONSE failed on every provider: {exc}") from exc
+    yield AIStreamChunk(content=content, provider=ProviderName.OPENCODE_ZEN)
 
 
 async def _run_document_index(

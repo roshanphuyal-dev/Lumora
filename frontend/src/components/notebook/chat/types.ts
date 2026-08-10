@@ -1,9 +1,10 @@
-import type { AskCitation } from "@/lib/notebooks"
+import type { ChatCitation } from "@/lib/chat"
 
 export interface ChatMessageData {
   id: string
   role: "user" | "assistant"
   content: string
-  provider?: string
-  citations?: AskCitation[]
+  provider?: string | null
+  citations?: ChatCitation[]
+  error?: string
 }

@@ -7,6 +7,7 @@ from alembic import context
 from app.core.config import get_settings
 from app.db.session import Base
 from app.models import (  # noqa: F401 -- register models with Base.metadata
+    chat,
     course,
     document,
     notebook,

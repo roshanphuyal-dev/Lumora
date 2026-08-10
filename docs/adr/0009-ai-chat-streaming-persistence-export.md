@@ -1,7 +1,7 @@
 # ADR 0009: AI Chat Streaming, Persistence, and PDF Export Architecture
 
 ## Status
-Proposed — targets `docs/ROADMAP.md` Phase 2 ("AI chat, basic Q&A grounded in notebook"). Not yet implemented; the Phase 1 `AskNotebookSection` ships a frontend-only rendering upgrade (rich Markdown/KaTeX/code rendering, client-side multi-turn state, PDF export) against the existing single-turn, non-streaming `/notebooks/{id}/ask` endpoint. This ADR records the full target architecture so Phase 2 doesn't require re-gathering these requirements.
+Accepted — implemented for `docs/ROADMAP.md` Phase 2 ("AI chat, basic Q&A grounded in notebook"). The `conversations`/`messages` tables, SSE streaming endpoint (`docs/API.md` Chat API), and orchestrator `CHAT_RESPONSE` task type are shipped; `AskNotebookSection` now talks to the persisted/streaming backend instead of the single-turn `/notebooks/{id}/ask` endpoint.
 
 ## Context
 User-supplied spec for a production chatbox, given while only the Phase 1 stub existed (single question in, single ungrounded answer out, no history, no streaming). Two concerns don't fit the current backend and are explicitly deferred:
