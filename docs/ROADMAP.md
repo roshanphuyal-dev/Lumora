@@ -18,12 +18,14 @@ Tracks *when* things get built, in phase order, with enough granularity to know 
 
 ## Structure
 
-### Phase 1 — Foundation (Status: In Progress)
+### Phase 1 — Foundation (Status: Done)
 - Authentication (login, register, Google login, profiles)
 - Dashboard skeleton
 - File upload (PDF/PPTX/DOCX/images) + parsing
 - NotebookLM integration (document indexing)
 - Gemini integration (basic teaching calls)
+
+Verified end-to-end against a running backend + real providers (no stubs remaining). Deployment (CI/CD, live hosting) is intentionally not a gate for this status — see Phase 5 and the Definition of Done note below.
 
 ### Phase 2 — Study Materials (Status: Not Started)
 - Notes, study guides, flashcards
@@ -47,8 +49,9 @@ Tracks *when* things get built, in phase order, with enough granularity to know 
 - Voice tutor, AI whiteboard, mobile app
 - YouTube summarizer, research assistant, coding tutor, math solver
 - AI debate mode, AI mock exams
+- **Deployment**: CI/CD (GitHub Actions), live hosting (Oracle Cloud VPS, Docker, Nginx) per `docs/DEPLOYMENT.md`. Deliberately moved here from being a per-phase gate (previously blocked Phase 1's Definition of Done) — the app runs and is verified end-to-end locally/against real providers through Phases 1-4; going live is treated as its own phase of work, not a checkbox on every earlier one.
 
 ## Definition of Done (per phase)
-A phase is Done when: its features work end-to-end in a deployed environment, have test coverage per `docs/TESTING.md`, and their `docs/*.md` sections are updated to reflect the shipped implementation (not the original plan).
+A phase is Done when: its features work end-to-end against real providers/a running local backend (not a deployed environment — see Phase 5), have test coverage per `docs/TESTING.md`, and their `docs/*.md` sections are updated to reflect the shipped implementation (not the original plan).
 
 <!-- TODO: assign target dates once solo/team capacity is known -->
