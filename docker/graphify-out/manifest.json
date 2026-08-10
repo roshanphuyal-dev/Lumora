@@ -1,0 +1,12 @@
+{
+  "README.md": {
+    "mtime": 1784826106.3982856,
+    "ast_hash": "78b3d556e11109e8187ec0db7d71d6f2",
+    "semantic_hash": ""
+  },
+  "docker-compose.yml": {
+    "mtime": 1786263452.2173338,
+    "ast_hash": "b665d31126b69717f0130c6a40074b4a",
+    "semantic_hash": ""
+  }
+}
