@@ -61,6 +61,9 @@ def _question_kwargs(item: QuestionItem) -> dict:
     elif question_type == "case_study":
         type_data = {"scenario": item.scenario}
         reference_answer = item.reference_answer
+    elif question_type == "assertion_reason":
+        type_data = {"assertion": item.assertion, "reason": item.reason, "options": item.options}
+        correct_answer = item.correct_answer
     else:  # short_answer / long_answer
         reference_answer = item.reference_answer
 
@@ -132,6 +135,7 @@ async def _generate_quiz(quiz_id: uuid.UUID) -> None:
                     difficulty=QuizDifficulty(item.difficulty),
                     explanation=item.explanation or "",
                     citation=item.citation.model_dump() if item.citation else None,
+                    topic=item.topic,
                     **_question_kwargs(item),
                 )
                 for position, item in enumerate(items)

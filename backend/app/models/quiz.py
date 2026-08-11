@@ -145,6 +145,11 @@ class Question(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Free-text types only (short_answer/long_answer/case_study).
     reference_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    # Weak-topic-tagging: populated at generation time (QUIZ_GENERATION prompt) for
+    # all question types. Nullable because existing rows predate this column and
+    # backfill is not guaranteed; grading (quiz_attempt_service) falls back to None
+    # for objective types when absent. See docs/adr/0011, decision #3.
+    topic: Mapped[str | None] = mapped_column(Text, nullable=True)
     difficulty: Mapped[QuizDifficulty] = mapped_column(
         SAEnum(
             QuizDifficulty,

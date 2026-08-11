@@ -107,12 +107,22 @@ class _MatchingPairSchema(BaseModel):
 
 class _QuestionItemSchema(BaseModel):
     """Mirrors `ai.orchestrator.schemas.QuestionItem`'s shape -- one quiz question, flat
-    across all 7 question types (`ai/prompts/quiz_generation_v1.py`), duplicated here for
-    the same reason as `_FlashcardItemSchema` (no importing `ai.orchestrator.schemas`)."""
+    across all 8 question types (`ai/prompts/quiz_generation_v1.py`), duplicated here for
+    the same reason as `_FlashcardItemSchema` (no importing `ai.orchestrator.schemas`).
+
+    `topic` is a required `str` (not `str | None`), on purpose, unlike the type-specific
+    fields below -- Gemini only reliably fills fields Pydantic puts in the JSON schema's
+    `required` array; a nullable `topic` plus a prose "always set it" prompt instruction
+    produced `topic: null` on every question in a live check. See
+    `ai.orchestrator.schemas.QuestionItem`'s docstring for the same note.
+    """
 
     question_type: str
     prompt: str
+    topic: str
     scenario: str | None = None
+    assertion: str | None = None
+    reason: str | None = None
     options: list[str] | None = None
     pairs: list[_MatchingPairSchema] | None = None
     blanks: list[str] | None = None

@@ -94,6 +94,7 @@ def _question(
     explanation: str = "Explanation.",
     citation: dict | None = None,
     difficulty: QuizDifficulty = QuizDifficulty.MEDIUM,
+    topic: str | None = None,
 ) -> Question:
     return Question(
         quiz_id=quiz_id,
@@ -106,6 +107,7 @@ def _question(
         explanation=explanation,
         citation=citation,
         difficulty=difficulty,
+        topic=topic,
     )
 
 
@@ -330,6 +332,45 @@ async def test_submit_attempt_with_free_text_dispatches_grading_task(
     assert rows[str(mcq_q.id)].is_correct is True
     assert rows[str(essay_q.id)].is_correct is None
     assert rows[str(essay_q.id)].score == Decimal("0")
+
+
+async def test_submit_attempt_objective_answer_carries_question_topic_into_topic_tag(
+    db_session: AsyncSession,
+) -> None:
+    """`QuizAttemptAnswer.topic_tag` for a deterministically-graded (objective) answer is
+    pulled straight from `Question.topic` (populated at generation time), not left `None`
+    -- this is what weak-topic tagging is built on."""
+    user, notebook = await _user_notebook(db_session, "submit-topic-tag@example.com")
+    quiz = await _quiz(db_session, user, notebook, status=QuizStatus.DONE)
+    tagged_q, untagged_q = await _add_questions(
+        db_session,
+        _question(quiz.id, 0, QuestionType.MCQ, correct_answer="Paris", topic="geography"),
+        _question(quiz.id, 1, QuestionType.TRUE_FALSE, correct_answer="true", topic=None),
+    )
+    attempt = await quiz_attempt_service.start_attempt(db_session, user.id, notebook.id, quiz.id)
+    await quiz_attempt_service.autosave_answer(
+        db_session, user.id, notebook.id, quiz.id, attempt.id, tagged_q.id, "London"
+    )
+    await quiz_attempt_service.autosave_answer(
+        db_session, user.id, notebook.id, quiz.id, attempt.id, untagged_q.id, "true"
+    )
+
+    with patch("app.services.quiz_attempt_service.grade_quiz_attempt_task.delay") as delay:
+        submitted = await quiz_attempt_service.submit_attempt(
+            db_session, user.id, notebook.id, quiz.id, attempt.id
+        )
+    delay.assert_not_called()
+
+    answer_rows = await db_session.scalars(
+        select(QuizAttemptAnswer).where(QuizAttemptAnswer.attempt_id == submitted.id)
+    )
+    rows = {str(row.question_id): row for row in answer_rows}
+    # Missed answer, but topic_tag is still set from the question -- grading correctness
+    # and topic tagging are independent.
+    assert rows[str(tagged_q.id)].is_correct is False
+    assert rows[str(tagged_q.id)].topic_tag == "geography"
+    assert rows[str(untagged_q.id)].is_correct is True
+    assert rows[str(untagged_q.id)].topic_tag is None
 
 
 async def test_submit_attempt_rejects_when_already_submitted(db_session: AsyncSession) -> None:

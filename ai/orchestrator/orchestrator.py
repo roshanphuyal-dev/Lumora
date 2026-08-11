@@ -31,6 +31,7 @@ from ai.gemini.client import GeminiClient, GeminiError
 from ai.notebooklm.client import NotebookLMClient, NotebookLMError
 from ai.opencode_zen.client import OpenCodeZenClient, OpenCodeZenError
 from ai.orchestrator.schemas import (
+    ASSERTION_REASON_OPTIONS,
     AIResponse,
     AIStreamChunk,
     ChatResponseRequest,
@@ -398,15 +399,59 @@ async def _run_flashcard_generation(
     )
 
 
+def _validate_assertion_reason_items(items: list[QuestionItem]) -> None:
+    """Hard-fail on any `assertion_reason` item whose `options`/`correct_answer` drift from
+    `ASSERTION_REASON_OPTIONS`, the canonical 4-string answer set
+    (`ai/orchestrator/schemas.py`).
+
+    Grading is exact-string match (`_grade_objective` in
+    `backend/app/services/quiz_attempt_service.py`) and the frontend only ever submits back
+    one of the option strings it was shown
+    (`frontend/src/components/quiz/questions/AssertionReasonQuestion.tsx`) -- the prompt
+    instructs Gemini to reuse the canonical strings verbatim, but that's a request, not a
+    guarantee. Without this check a noncanonical/mismatched item would still satisfy
+    `QuestionItem`'s schema (`options: list[str] | None`, `correct_answer: str | None` are
+    unconstrained) and pass through silently, becoming ungradeable-correct once persisted --
+    nobody could ever answer it right. Comparison normalizes the same way
+    `_grade_objective` does (trim + casefold) so a harmless whitespace/case difference isn't
+    treated as drift (.claude/rules/ai.md "validate generated output against the expected
+    schema"; ADR 0011's hard-failure-over-garbled-grade precedent, extended from grading to
+    generation).
+    """
+    canonical_normalized = {option.strip().casefold() for option in ASSERTION_REASON_OPTIONS}
+    for index, item in enumerate(items):
+        if item.question_type != "assertion_reason":
+            continue
+
+        options = item.options or []
+        options_normalized = {option.strip().casefold() for option in options}
+        if (
+            len(options) != len(ASSERTION_REASON_OPTIONS)
+            or options_normalized != canonical_normalized
+        ):
+            raise OrchestrationError(
+                f"QUIZ_GENERATION returned an assertion_reason question (index {index}) "
+                f"whose options don't match the canonical 4-option set: {options!r}"
+            )
+
+        correct_answer = item.correct_answer
+        if correct_answer is None or correct_answer.strip().casefold() not in canonical_normalized:
+            raise OrchestrationError(
+                f"QUIZ_GENERATION returned an assertion_reason question (index {index}) "
+                f"whose correct_answer isn't one of its options: {correct_answer!r}"
+            )
+
+
 async def _run_quiz_generation(
     request: QuizGenerationRequest, gemini_client: GeminiClient | None
 ) -> AIResponse:
     """Gemini only, no fallback -- same reasoning as `_run_structured_note_generation`.
 
-    OpenCode Zen has no structured-output API, and best-effort-parsing free text into 7
+    OpenCode Zen has no structured-output API, and best-effort-parsing free text into 8
     different question shapes (mcq/true_false/fill_blank/matching/short_answer/
-    long_answer/case_study) for a rare failure path isn't worth the fragility -- a clean
-    failure (retry the generation) beats a garbled quiz a UI would try to render.
+    long_answer/case_study/assertion_reason) for a rare failure path isn't worth the
+    fragility -- a clean failure (retry the generation) beats a garbled quiz a UI would
+    try to render.
     """
     try:
         raw_json = await (gemini_client or GeminiClient()).generate_quiz(
@@ -421,6 +466,8 @@ async def _run_quiz_generation(
         raise OrchestrationError(f"QUIZ_GENERATION failed: {exc}") from exc
     except ValidationError as exc:
         raise OrchestrationError(f"QUIZ_GENERATION returned an invalid quiz: {exc}") from exc
+
+    _validate_assertion_reason_items(items)
 
     return AIResponse(
         task_type=TaskType.QUIZ_GENERATION,

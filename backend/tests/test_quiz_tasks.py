@@ -57,6 +57,7 @@ def _mixed_items_json() -> str:
                 "difficulty": "easy",
                 "explanation": "Mitochondria produce ATP.",
                 "citation": {"source_id": "src-1"},
+                "topic": "cell-organelles",
             },
             {
                 "question_type": "matching",
@@ -68,6 +69,7 @@ def _mixed_items_json() -> str:
                 "correct_answer": "Nucleus=Stores DNA, Ribosome=Synthesizes protein",
                 "difficulty": "medium",
                 "explanation": "Organelles have distinct roles.",
+                "topic": "cell-organelles",
             },
             {
                 "question_type": "fill_blank",
@@ -76,6 +78,7 @@ def _mixed_items_json() -> str:
                 "correct_answer": "nucleus",
                 "difficulty": "easy",
                 "explanation": "The nucleus is the control center.",
+                "topic": "cell-organelles",
             },
             {
                 "question_type": "case_study",
@@ -84,6 +87,7 @@ def _mixed_items_json() -> str:
                 "reference_answer": "Spindle fibers can't form, blocking mitosis.",
                 "difficulty": "hard",
                 "explanation": "Spindle inhibitors block mitosis.",
+                "topic": "mitosis",
             },
         ]
     )
@@ -146,6 +150,65 @@ async def test_generate_quiz_persists_ordered_questions_and_status_done(
     assert case_study.type_data == {"scenario": "A cell is exposed to a spindle-fiber inhibitor."}
     assert case_study.correct_answer is None
     assert case_study.reference_answer == "Spindle fibers can't form, blocking mitosis."
+
+
+async def test_generate_quiz_persists_assertion_reason_type_data_and_topic(
+    db_session: AsyncSession,
+) -> None:
+    """`assertion_reason` items split into `type_data` (assertion/reason/options, shown
+    pre-attempt) vs. `correct_answer` (the answer key), same shape as the `mcq` branch --
+    and `topic` (type-agnostic, populated for every question type) lands on the row."""
+    notebook, quiz = await _user_notebook_quiz(db_session, "quiz-assertion-reason@example.com")
+    response = AIResponse(
+        task_type=TaskType.QUIZ_GENERATION,
+        provider=ProviderName.GEMINI,
+        content=json.dumps(
+            [
+                {
+                    "question_type": "assertion_reason",
+                    "prompt": "Assess the assertion and reason.",
+                    "assertion": "Mitochondria produce ATP.",
+                    "reason": "Mitochondria have their own DNA.",
+                    "options": [
+                        "both_true_reason_correct",
+                        "both_true_reason_incorrect",
+                        "assertion_true_reason_false",
+                        "both_false",
+                    ],
+                    "correct_answer": "both_true_reason_incorrect",
+                    "difficulty": "hard",
+                    "explanation": "Both statements are true but unrelated.",
+                    "topic": "cell-respiration",
+                }
+            ]
+        ),
+    )
+
+    with (
+        patch("app.workers.quiz_tasks.celery_session_maker", TestSessionLocal),
+        patch("app.workers.quiz_tasks.run_task", new=AsyncMock(return_value=response)),
+    ):
+        await _generate_quiz(quiz.id)
+
+    await db_session.refresh(quiz)
+    assert quiz.status is QuizStatus.DONE
+
+    (question,) = list(
+        await db_session.scalars(select(Question).where(Question.quiz_id == quiz.id))
+    )
+    assert question.question_type.value == "assertion_reason"
+    assert question.type_data == {
+        "assertion": "Mitochondria produce ATP.",
+        "reason": "Mitochondria have their own DNA.",
+        "options": [
+            "both_true_reason_correct",
+            "both_true_reason_incorrect",
+            "assertion_true_reason_false",
+            "both_false",
+        ],
+    }
+    assert question.correct_answer == "both_true_reason_incorrect"
+    assert question.topic == "cell-respiration"
 
 
 async def test_generate_quiz_status_transitions_pending_generating_done(

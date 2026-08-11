@@ -156,8 +156,9 @@ QUESTION_TYPES = (
     "short_answer",
     "long_answer",
     "case_study",
+    "assertion_reason",
 )
-"""The 7 supported quiz question shapes (`docs/AI_WORKFLOWS.md#3`).
+"""The 8 supported quiz question shapes (`docs/AI_WORKFLOWS.md#3`).
 
 Kept as a plain tuple of `str`, not an enum, for the same reason as
 `NotesGenerationRequest.material_type` -- `ai/` doesn't import backend model enums, and a
@@ -165,8 +166,31 @@ future `app.models.question.QuestionType` (Milestone 1, DB schema) validates ind
 at the API layer.
 """
 
-_OBJECTIVE_QUESTION_TYPES = {"mcq", "true_false", "fill_blank", "matching"}
+_OBJECTIVE_QUESTION_TYPES = {"mcq", "true_false", "fill_blank", "matching", "assertion_reason"}
 """Question types answered via `QuestionItem.correct_answer` (single verifiable answer)."""
+
+ASSERTION_REASON_OPTIONS: tuple[str, str, str, str] = (
+    "Both Assertion and Reason are true, and Reason is the correct explanation of Assertion.",
+    "Both Assertion and Reason are true, but Reason is NOT the correct explanation of Assertion.",
+    "Assertion is true, but Reason is false.",
+    "Assertion is false, but Reason is true.",
+)
+"""The 4 canonical `assertion_reason` answer-option strings -- copied verbatim from
+`frontend/src/components/quiz/questions/AssertionReasonQuestion.tsx`'s `DEFAULT_OPTIONS`
+(the frontend's rendered fallback whenever a question's `type_data.options` is absent),
+which makes this tuple the AI-side source of truth for that string set.
+
+Grading is exact-string match (`_grade_objective` in
+`backend/app/services/quiz_attempt_service.py`) and the frontend only ever submits back one
+of these option strings as the student's answer, so a generated `assertion_reason` item
+whose `options`/`correct_answer` drift from this tuple would silently become
+ungradeable-correct if ever persisted. `ai/prompts/quiz_generation_v1.py` repeats these same
+4 strings as literal prompt text (its `SYSTEM_PROMPT` is a static string, not templated, so
+it can't reference this constant directly -- keep them in sync by hand);
+`ai/orchestrator/orchestrator.py:_run_quiz_generation` enforces it for real, rejecting any
+generated item that doesn't match before returning (`.claude/rules/ai.md`'s "validate
+generated output against the expected schema" + ADR 0011's hard-failure-over-garbled-grade
+precedent, extended from grading to generation)."""
 
 _FREE_TEXT_QUESTION_TYPES = {"short_answer", "long_answer", "case_study"}
 """Question types answered via `QuestionItem.reference_answer` (open-ended, graded against
@@ -187,7 +211,7 @@ class MatchingPair(BaseModel):
 class QuestionItem(BaseModel):
     """One generated quiz question — the structured-output contract Gemini must satisfy.
 
-    A single flat shape covers all 7 `QUESTION_TYPES`, discriminated by `question_type`;
+    A single flat shape covers all 8 `QUESTION_TYPES`, discriminated by `question_type`;
     only the fields relevant to that type are populated, the rest stay `None` (same
     flat-optional-fields approach as `ai/gemini/client.py`'s structured-note item schema).
 
@@ -202,11 +226,30 @@ class QuestionItem(BaseModel):
       graded against a rubric rather than exact-matched (Milestone 6).
     - `case_study`: `scenario` is the case description the student reads first; `prompt`
       is the question posed about it; `reference_answer` is the expected/model answer.
+    - `assertion_reason`: `assertion` and `reason` are the two statements presented to the
+      student; `options` is the 4 canonical assertion-reason relationship strings (reused
+      from `mcq`, not a dedicated field, so grading logic doesn't need a type-specific
+      branch) and `correct_answer` must exactly equal one of them --
+      `frontend/src/components/quiz/questions/AssertionReasonQuestion.tsx`'s
+      `DEFAULT_OPTIONS` is the canonical source for the exact 4 strings; a mismatch here
+      silently breaks exact-string grading (`_grade_objective`).
+
+    `topic` is the specific sub-topic this question tests (e.g. "photosynthesis", "Newton's
+    second law"), same spirit as `QuestionGradeResult.topic_tag` on the grading side --
+    always populated, regardless of `question_type`. Unlike the type-specific fields above,
+    it's a required `str`, not `str | None`, on purpose: Gemini's structured-output mode
+    reliably fills fields listed in the JSON schema's `required` array, but treats
+    nullable/optional fields as skippable even when the prompt says "always set it" --
+    a prose instruction on a nullable field was tried first and produced `topic: null` on
+    every question (0/8 in a live check), so the field itself now carries the constraint.
     """
 
     question_type: str
     prompt: str
+    topic: str
     scenario: str | None = None
+    assertion: str | None = None
+    reason: str | None = None
     options: list[str] | None = None
     pairs: list[MatchingPair] | None = None
     blanks: list[str] | None = None

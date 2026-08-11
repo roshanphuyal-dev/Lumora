@@ -250,7 +250,7 @@ async def submit_attempt(
                     is_correct=is_correct,
                     score=Decimal("1") if is_correct else Decimal("0"),
                     ai_feedback=None,
-                    topic_tag=None,
+                    topic_tag=question.topic,
                 )
             )
 

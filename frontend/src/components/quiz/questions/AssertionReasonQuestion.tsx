@@ -11,16 +11,15 @@ const DEFAULT_OPTIONS = [
 ]
 
 /**
- * `type_data` shape for `assertion_reason` isn't produced by the current quiz-generation
- * pipeline yet -- `ai/orchestrator/schemas.py:QUESTION_TYPES` (7 entries) and
- * `QuizCreate`'s validator both exclude it, and `_question_kwargs` has no dedicated branch
- * for it (falls through to the free-text `else`), so no question of this type can actually
- * be generated/attempted today. Pre-existing gap (Milestone 3/6), not addressed here.
- * Renders defensively for whenever that's filled in: reads `type_data.assertion`/
- * `type_data.reason` when present, falling back to splitting `prompt` on newlines; reads
- * `type_data.options` when present, falling back to the standard 4-option
- * assertion-reason relationship set. Answer/`correct_answer` is a plain `string` (the
- * selected option text), same as `mcq`/`true_false`
+ * `type_data` for `assertion_reason` is produced by `_question_kwargs` in
+ * `backend/app/workers/quiz_tasks.py` as `{"assertion": ..., "reason": ..., "options": ...}`,
+ * mirroring `ai/orchestrator/schemas.py:QuestionItem`'s `assertion`/`reason`/`options` fields
+ * for this type (one of `QUESTION_TYPES`, 8 entries). Reads `type_data.assertion`/
+ * `type_data.reason` when present, falling back to splitting `prompt` on newlines for
+ * defensiveness; reads `type_data.options` when present, falling back to `DEFAULT_OPTIONS`
+ * (the standard 4-option assertion-reason relationship set, which the generation prompt
+ * copies verbatim -- see `ai/prompts/quiz_generation_v1.py`). Answer/`correct_answer` is a
+ * plain `string` (the selected option text), same as `mcq`/`true_false`
  * (`backend/app/services/quiz_attempt_service.py:_grade_objective`).
  */
 export function AssertionReasonQuestion({

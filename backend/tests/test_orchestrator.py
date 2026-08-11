@@ -24,6 +24,7 @@ from ai.notebooklm.client import (
 from ai.opencode_zen.client import OpenCodeZenClient, OpenCodeZenError
 from ai.orchestrator.orchestrator import OrchestrationError, run_task
 from ai.orchestrator.schemas import (
+    ASSERTION_REASON_OPTIONS,
     AIResponse,
     Citation,
     DocumentIndexRequest,
@@ -249,6 +250,7 @@ def _quiz_generation_items_json() -> str:
                 "correct_answer": "Mitochondria",
                 "difficulty": "easy",
                 "explanation": "Mitochondria produce ATP.",
+                "topic": "cell-organelles",
             }
         ]
     )
@@ -306,6 +308,79 @@ async def test_quiz_generation_wraps_invalid_json_as_orchestration_error() -> No
     mock_client.generate_quiz.return_value = "not a valid question list"
 
     with pytest.raises(OrchestrationError, match="invalid quiz"):
+        await run_task(
+            TaskType.QUIZ_GENERATION, _quiz_generation_request(), gemini_client=mock_client
+        )
+
+
+def _assertion_reason_item_json(
+    *, options: list[str] | None = None, correct_answer: str | None = None
+) -> str:
+    """One `assertion_reason` `QuestionItem` as Gemini would return it. Defaults to a
+    valid item (canonical `ASSERTION_REASON_OPTIONS`, `correct_answer` matching the first
+    option) -- callers override `options`/`correct_answer` to construct invalid variants.
+    """
+    return json.dumps(
+        [
+            {
+                "question_type": "assertion_reason",
+                "prompt": "Assess the assertion and reason.",
+                "assertion": "Mitochondria produce ATP.",
+                "reason": "Mitochondria have their own DNA.",
+                "options": list(ASSERTION_REASON_OPTIONS) if options is None else options,
+                "correct_answer": ASSERTION_REASON_OPTIONS[0]
+                if correct_answer is None
+                else correct_answer,
+                "difficulty": "hard",
+                "topic": "cell-respiration",
+            }
+        ]
+    )
+
+
+async def test_quiz_generation_accepts_valid_assertion_reason_item() -> None:
+    """A valid `assertion_reason` item -- canonical options, `correct_answer` one of
+    them -- passes the orchestrator's `_validate_assertion_reason_items` check and is
+    returned normally."""
+    mock_client = AsyncMock(spec=GeminiClient)
+    mock_client.generate_quiz.return_value = _assertion_reason_item_json()
+
+    response = await run_task(
+        TaskType.QUIZ_GENERATION, _quiz_generation_request(), gemini_client=mock_client
+    )
+
+    items_adapter = TypeAdapter(list[QuestionItem])
+    items = items_adapter.validate_json(response.content)
+    assert items[0].question_type == "assertion_reason"
+    assert items[0].options == list(ASSERTION_REASON_OPTIONS)
+    assert items[0].correct_answer == ASSERTION_REASON_OPTIONS[0]
+
+
+async def test_quiz_generation_rejects_assertion_reason_correct_answer_not_in_options() -> None:
+    """`correct_answer` must be one of `options` -- otherwise the question is
+    ungradeable-correct (the frontend only ever submits back an option string,
+    `_grade_objective` exact-matches against `correct_answer`)."""
+    mock_client = AsyncMock(spec=GeminiClient)
+    mock_client.generate_quiz.return_value = _assertion_reason_item_json(
+        correct_answer="Neither assertion nor reason is addressed."
+    )
+
+    with pytest.raises(OrchestrationError, match="correct_answer isn't one of its options"):
+        await run_task(
+            TaskType.QUIZ_GENERATION, _quiz_generation_request(), gemini_client=mock_client
+        )
+
+
+async def test_quiz_generation_rejects_assertion_reason_wrong_option_count() -> None:
+    """`options` must be exactly the 4 canonical strings -- a truncated/extended set (even
+    if every present string is otherwise canonical) doesn't match the frontend's rendered
+    choices and must be rejected."""
+    mock_client = AsyncMock(spec=GeminiClient)
+    mock_client.generate_quiz.return_value = _assertion_reason_item_json(
+        options=list(ASSERTION_REASON_OPTIONS[:3])
+    )
+
+    with pytest.raises(OrchestrationError, match="canonical 4-option set"):
         await run_task(
             TaskType.QUIZ_GENERATION, _quiz_generation_request(), gemini_client=mock_client
         )

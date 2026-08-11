@@ -1,6 +1,6 @@
 """Versioned prompt for structured, grounded quiz question generation.
 
-Covers all 7 `ai.orchestrator.schemas.QUESTION_TYPES` in one prompt/response shape
+Covers all 8 `ai.orchestrator.schemas.QUESTION_TYPES` in one prompt/response shape
 (`ai/gemini/client.py:generate_quiz` enforces this via Gemini's structured-output mode,
 `response_schema`) -- a flat per-item schema discriminated by `question_type`, same
 approach as `ai/prompts/structured_note_generation_v1.py`'s item list.
@@ -32,6 +32,19 @@ Shape rules per `question_type`:
 - "case_study": `scenario` gives a short realistic situation grounded in the reference
   material; `prompt` asks a question that requires applying concepts from the material to
   that scenario. `reference_answer` is a model answer.
+- "assertion_reason": `assertion` states a single factual claim (Assertion). `reason`
+  states a single factual claim offered as its explanation (Reason). `options` must be
+  exactly these 4 strings, in this order, with no changes to their wording:
+  "Both Assertion and Reason are true, and Reason is the correct explanation of Assertion.",
+  "Both Assertion and Reason are true, but Reason is NOT the correct explanation of Assertion.",
+  "Assertion is true, but Reason is false.",
+  "Assertion is false, but Reason is true.".
+  `correct_answer` must be an exact copy of whichever one of those 4 strings correctly
+  describes the assertion/reason pair -- copy it verbatim, do not paraphrase.
+
+Every question, regardless of `question_type`, must also have a `topic`: a short sub-topic
+string naming the specific concept it tests (e.g. "photosynthesis", "Newton's second law"),
+concise enough to group similar questions together. Always set it.
 
 Leave fields that don't apply to a question's type as null rather than empty strings/lists.
 Only use citation values present in the reference material; otherwise set citation to null.
