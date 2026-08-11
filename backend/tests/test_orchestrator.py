@@ -10,10 +10,20 @@ logic itself is mocked or skipped.
 """
 
 import json
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from ai.gemini.client import GeminiClient, GeminiError
+from ai.image_search.client import (
+    OpenverseClient,
+    OpenverseError,
+    WikimediaClient,
+    WikimediaError,
+)
+from ai.internet_search.brave_client import BraveClient, BraveError
+from ai.internet_search.schemas import InternetSearchItem, InternetSearchResult, SearchProvider
+from ai.internet_search.tavily_client import TavilyClient, TavilyError
 from ai.notebooklm.client import (
     DocumentIndexResult,
     NotebookLMClient,
@@ -29,12 +39,15 @@ from ai.orchestrator.schemas import (
     Citation,
     DocumentIndexRequest,
     GradingItem,
+    InternetSearchRequest,
     NotebookQueryRequest,
     ProviderName,
     QuestionItem,
     QuizGenerationRequest,
     QuizGradingRequest,
     TeachingExplanationRequest,
+    TopicImageResult,
+    TopicImageSearchRequest,
 )
 from ai.orchestrator.task_types import TaskType
 from pydantic import TypeAdapter
@@ -487,6 +500,136 @@ async def test_quiz_grading_wraps_gemini_error() -> None:
         await run_task(TaskType.QUIZ_GRADING, _quiz_grading_request(), gemini_client=mock_client)
 
 
+# ---------------------------------------------------------------------------
+# TOPIC_IMAGE_SEARCH (ADR 0010) -- Wikimedia primary, Openverse fallback, no LLM
+# synthesis step at all.
+# ---------------------------------------------------------------------------
+
+
+def _topic_image_search_request() -> TopicImageSearchRequest:
+    return TopicImageSearchRequest(query="the simplex method")
+
+
+def _topic_image_result() -> TopicImageResult:
+    return TopicImageResult(
+        image_url="https://upload.wikimedia.org/wikipedia/commons/simplex.png",
+        attribution="Jane Doe",
+        license="CC BY-SA 4.0",
+        source_url="https://commons.wikimedia.org/wiki/File:simplex.png",
+    )
+
+
+async def test_topic_image_search_routes_to_wikimedia_when_found() -> None:
+    wikimedia_mock = AsyncMock(spec=WikimediaClient)
+    wikimedia_mock.search_image.return_value = _topic_image_result()
+    openverse_mock = AsyncMock(spec=OpenverseClient)
+
+    request = _topic_image_search_request()
+    response = await run_task(
+        TaskType.TOPIC_IMAGE_SEARCH,
+        request,
+        wikimedia_client=wikimedia_mock,
+        openverse_client=openverse_mock,
+    )
+
+    wikimedia_mock.search_image.assert_awaited_once_with(request.query)
+    openverse_mock.search_image.assert_not_awaited()
+    assert response.task_type == TaskType.TOPIC_IMAGE_SEARCH
+    assert response.provider == ProviderName.WIKIMEDIA
+    assert response.metadata == {"found": "true"}
+    assert json.loads(response.content) == _topic_image_result().model_dump()
+
+
+async def test_topic_image_search_falls_back_to_openverse_when_wikimedia_errors() -> None:
+    wikimedia_mock = AsyncMock(spec=WikimediaClient)
+    wikimedia_mock.search_image.side_effect = WikimediaError("commons unreachable")
+    openverse_mock = AsyncMock(spec=OpenverseClient)
+    openverse_mock.search_image.return_value = _topic_image_result()
+
+    request = _topic_image_search_request()
+    response = await run_task(
+        TaskType.TOPIC_IMAGE_SEARCH,
+        request,
+        wikimedia_client=wikimedia_mock,
+        openverse_client=openverse_mock,
+    )
+
+    openverse_mock.search_image.assert_awaited_once_with(request.query)
+    assert response.provider == ProviderName.OPENVERSE
+    assert response.metadata == {"found": "true"}
+    assert json.loads(response.content) == _topic_image_result().model_dump()
+
+
+async def test_topic_image_search_raises_when_both_providers_fail() -> None:
+    wikimedia_mock = AsyncMock(spec=WikimediaClient)
+    wikimedia_mock.search_image.side_effect = WikimediaError("commons unreachable")
+    openverse_mock = AsyncMock(spec=OpenverseClient)
+    openverse_mock.search_image.side_effect = OpenverseError("openverse unreachable")
+
+    with pytest.raises(OrchestrationError, match="commons unreachable") as exc_info:
+        await run_task(
+            TaskType.TOPIC_IMAGE_SEARCH,
+            _topic_image_search_request(),
+            wikimedia_client=wikimedia_mock,
+            openverse_client=openverse_mock,
+        )
+
+    assert "openverse unreachable" in str(exc_info.value)
+
+
+async def test_topic_image_search_returns_not_found_when_neither_has_a_match() -> None:
+    """Both providers respond successfully but find nothing -- a real outcome (ADR 0010's
+    Tradeoffs section), not an error: no `OrchestrationError`, distinguished from a hit via
+    `metadata["found"]`.
+    """
+    wikimedia_mock = AsyncMock(spec=WikimediaClient)
+    wikimedia_mock.search_image.return_value = None
+    openverse_mock = AsyncMock(spec=OpenverseClient)
+    openverse_mock.search_image.return_value = None
+
+    response = await run_task(
+        TaskType.TOPIC_IMAGE_SEARCH,
+        _topic_image_search_request(),
+        wikimedia_client=wikimedia_mock,
+        openverse_client=openverse_mock,
+    )
+
+    assert response.task_type == TaskType.TOPIC_IMAGE_SEARCH
+    assert response.metadata == {"found": "false"}
+    assert response.content == ""
+
+
+async def test_topic_image_search_not_found_when_wikimedia_errors_openverse_has_no_match() -> None:
+    """One provider erroring isn't "both fail" -- the other provider's definitive "no
+    match" still yields the not-found contract, not a hard failure."""
+    wikimedia_mock = AsyncMock(spec=WikimediaClient)
+    wikimedia_mock.search_image.side_effect = WikimediaError("commons unreachable")
+    openverse_mock = AsyncMock(spec=OpenverseClient)
+    openverse_mock.search_image.return_value = None
+
+    response = await run_task(
+        TaskType.TOPIC_IMAGE_SEARCH,
+        _topic_image_search_request(),
+        wikimedia_client=wikimedia_mock,
+        openverse_client=openverse_mock,
+    )
+
+    assert response.metadata == {"found": "false"}
+
+
+async def test_topic_image_search_rejects_mismatched_request_type() -> None:
+    wikimedia_mock = AsyncMock(spec=WikimediaClient)
+
+    with pytest.raises(OrchestrationError, match="TopicImageSearchRequest"):
+        await run_task(
+            TaskType.TOPIC_IMAGE_SEARCH,
+            _teaching_explanation_request(),
+            wikimedia_client=wikimedia_mock,
+        )
+
+    wikimedia_mock.search_image.assert_not_awaited()
+
+
 async def test_quiz_grading_never_falls_back_to_opencode_zen_on_gemini_failure() -> None:
     """Same no-fallback guarantee as QUIZ_GENERATION -- a bad parse would silently persist
     a wrong grade as a student's score, so QUIZ_GRADING must fail hard, never degrade
@@ -502,3 +645,212 @@ async def test_quiz_grading_never_falls_back_to_opencode_zen_on_gemini_failure()
             await run_task(
                 TaskType.QUIZ_GRADING, _quiz_grading_request(), gemini_client=mock_client
             )
+
+
+# ---------------------------------------------------------------------------
+# INTERNET_SEARCH (ADR 0012) -- Tavily primary, Brave optional fallback, Gemini synthesis.
+# ---------------------------------------------------------------------------
+
+
+def _internet_search_request() -> InternetSearchRequest:
+    return InternetSearchRequest(query="latest news on fusion energy", max_results=3)
+
+
+def _search_result(provider: SearchProvider) -> InternetSearchResult:
+    return InternetSearchResult(
+        query="latest news on fusion energy",
+        normalized_query="latest news on fusion energy",
+        provider=provider,
+        results=(
+            InternetSearchItem(
+                title="Fusion breakthrough",
+                url="https://example.com/fusion",
+                snippet="Scientists announced a new fusion milestone.",
+            ),
+        ),
+        fetched_at=datetime.now(UTC),
+    )
+
+
+def _bypassed_internet_search_cache(*, cached_result: InternetSearchResult | None = None):
+    """Patch the orchestrator's cache seam so INTERNET_SEARCH tests don't depend on a real
+    Redis instance being reachable -- `ai/internet_search/cache.py` is unit-tested
+    separately (`backend/tests/test_internet_search_cache.py`)."""
+    return (
+        patch(
+            "ai.orchestrator.orchestrator.get_cached_search_result",
+            AsyncMock(return_value=cached_result),
+        ),
+        patch(
+            "ai.orchestrator.orchestrator.set_cached_search_result", AsyncMock(return_value=None)
+        ),
+    )
+
+
+async def test_internet_search_routes_to_tavily_then_gemini_synthesizes() -> None:
+    tavily_mock = AsyncMock(spec=TavilyClient)
+    tavily_mock.search.return_value = _search_result(SearchProvider.TAVILY)
+    gemini_mock = AsyncMock(spec=GeminiClient)
+    gemini_mock.generate_internet_search_synthesis.return_value = (
+        "Fusion energy has seen a breakthrough (source: https://example.com/fusion)."
+    )
+
+    request = _internet_search_request()
+    get_cache_patch, set_cache_patch = _bypassed_internet_search_cache()
+    with get_cache_patch, set_cache_patch as set_cache_mock:
+        response = await run_task(
+            TaskType.INTERNET_SEARCH,
+            request,
+            tavily_client=tavily_mock,
+            gemini_client=gemini_mock,
+        )
+
+    tavily_mock.search.assert_awaited_once_with(request.query, max_results=request.max_results)
+    set_cache_mock.assert_awaited_once()
+    gemini_mock.generate_internet_search_synthesis.assert_awaited_once_with(
+        question=request.query,
+        results=[
+            {
+                "title": "Fusion breakthrough",
+                "url": "https://example.com/fusion",
+                "snippet": "Scientists announced a new fusion milestone.",
+            }
+        ],
+    )
+    assert response.task_type == TaskType.INTERNET_SEARCH
+    assert response.provider == ProviderName.GEMINI
+    assert response.content.startswith("Fusion energy")
+    assert response.citations == [
+        Citation(
+            source_id="https://example.com/fusion",
+            excerpt="Scientists announced a new fusion milestone.",
+        )
+    ]
+    assert response.metadata == {"search_provider": "tavily"}
+
+
+async def test_internet_search_uses_cached_tavily_result_without_calling_tavily() -> None:
+    tavily_mock = AsyncMock(spec=TavilyClient)
+    gemini_mock = AsyncMock(spec=GeminiClient)
+    gemini_mock.generate_internet_search_synthesis.return_value = "answer"
+
+    request = _internet_search_request()
+    get_cache_patch, set_cache_patch = _bypassed_internet_search_cache(
+        cached_result=_search_result(SearchProvider.TAVILY)
+    )
+    with get_cache_patch, set_cache_patch as set_cache_mock:
+        response = await run_task(
+            TaskType.INTERNET_SEARCH,
+            request,
+            tavily_client=tavily_mock,
+            gemini_client=gemini_mock,
+        )
+
+    tavily_mock.search.assert_not_awaited()
+    set_cache_mock.assert_not_awaited()  # already cached, no need to re-cache
+    assert response.metadata == {"search_provider": "tavily"}
+
+
+async def test_internet_search_falls_back_to_brave_when_tavily_fails(monkeypatch) -> None:
+    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "brave-test-key")
+    tavily_mock = AsyncMock(spec=TavilyClient)
+    tavily_mock.search.side_effect = TavilyError("quota exhausted")
+    brave_mock = AsyncMock(spec=BraveClient)
+    brave_mock.search.return_value = _search_result(SearchProvider.BRAVE)
+    gemini_mock = AsyncMock(spec=GeminiClient)
+    gemini_mock.generate_internet_search_synthesis.return_value = "answer"
+
+    request = _internet_search_request()
+    get_cache_patch, set_cache_patch = _bypassed_internet_search_cache()
+    with get_cache_patch, set_cache_patch as set_cache_mock:
+        response = await run_task(
+            TaskType.INTERNET_SEARCH,
+            request,
+            tavily_client=tavily_mock,
+            brave_client=brave_mock,
+            gemini_client=gemini_mock,
+        )
+
+    brave_mock.search.assert_awaited_once_with(request.query, max_results=request.max_results)
+    assert response.metadata == {"search_provider": "brave"}
+    # Brave results are never cached (ADR 0012) -- only Tavily's success path caches.
+    set_cache_mock.assert_not_awaited()
+    assert response.citations == [
+        Citation(
+            source_id="https://example.com/fusion",
+            excerpt="Scientists announced a new fusion milestone.",
+        )
+    ]
+
+
+async def test_internet_search_skips_brave_when_not_configured(monkeypatch) -> None:
+    """No `BRAVE_SEARCH_API_KEY` -> a Tavily failure is final, never a silent Brave attempt
+    (ADR 0012's Consequences)."""
+    monkeypatch.delenv("BRAVE_SEARCH_API_KEY", raising=False)
+    tavily_mock = AsyncMock(spec=TavilyClient)
+    tavily_mock.search.side_effect = TavilyError("quota exhausted")
+
+    request = _internet_search_request()
+    get_cache_patch, set_cache_patch = _bypassed_internet_search_cache()
+    with (
+        get_cache_patch,
+        set_cache_patch,
+        patch(
+            "ai.orchestrator.orchestrator.BraveClient",
+            side_effect=AssertionError(
+                "BraveClient must never be constructed when BRAVE_SEARCH_API_KEY is unset"
+            ),
+        ),
+    ):
+        with pytest.raises(OrchestrationError, match="quota exhausted"):
+            await run_task(TaskType.INTERNET_SEARCH, request, tavily_client=tavily_mock)
+
+
+async def test_internet_search_raises_when_both_providers_fail(monkeypatch) -> None:
+    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "brave-test-key")
+    tavily_mock = AsyncMock(spec=TavilyClient)
+    tavily_mock.search.side_effect = TavilyError("tavily down")
+    brave_mock = AsyncMock(spec=BraveClient)
+    brave_mock.search.side_effect = BraveError("brave down")
+
+    request = _internet_search_request()
+    get_cache_patch, set_cache_patch = _bypassed_internet_search_cache()
+    with get_cache_patch, set_cache_patch:
+        with pytest.raises(OrchestrationError, match="tavily down") as exc_info:
+            await run_task(
+                TaskType.INTERNET_SEARCH,
+                request,
+                tavily_client=tavily_mock,
+                brave_client=brave_mock,
+            )
+
+    assert "brave down" in str(exc_info.value)
+
+
+async def test_internet_search_wraps_gemini_synthesis_error() -> None:
+    tavily_mock = AsyncMock(spec=TavilyClient)
+    tavily_mock.search.return_value = _search_result(SearchProvider.TAVILY)
+    gemini_mock = AsyncMock(spec=GeminiClient)
+    gemini_mock.generate_internet_search_synthesis.side_effect = GeminiError("synthesis failed")
+
+    request = _internet_search_request()
+    get_cache_patch, set_cache_patch = _bypassed_internet_search_cache()
+    with get_cache_patch, set_cache_patch:
+        with pytest.raises(OrchestrationError, match="synthesis failed"):
+            await run_task(
+                TaskType.INTERNET_SEARCH,
+                request,
+                tavily_client=tavily_mock,
+                gemini_client=gemini_mock,
+            )
+
+
+async def test_internet_search_rejects_mismatched_request_type() -> None:
+    tavily_mock = AsyncMock(spec=TavilyClient)
+
+    with pytest.raises(OrchestrationError, match="InternetSearchRequest"):
+        await run_task(
+            TaskType.INTERNET_SEARCH, _teaching_explanation_request(), tavily_client=tavily_mock
+        )
+
+    tavily_mock.search.assert_not_awaited()

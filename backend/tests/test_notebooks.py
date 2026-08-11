@@ -499,3 +499,211 @@ async def test_ask_returns_502_when_orchestrator_fails(
 
     assert resp.status_code == 502
     assert "every provider failed" in resp.json()["detail"]
+
+
+async def test_search_returns_content_and_provider(client: AsyncClient, unique_email: str) -> None:
+    token = await _register_and_login(client, unique_email)
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "Current Events"}, headers=_auth(token)
+    )
+    notebook_id = notebook.json()["id"]
+
+    fake_response = AIResponse(
+        task_type=TaskType.INTERNET_SEARCH,
+        provider=ProviderName.GEMINI,
+        content="The 2026 event happened last week.",
+        citations=[Citation(source_id="https://example.com/article", excerpt="It happened.")],
+        metadata={"search_provider": "tavily"},
+    )
+    with patch(
+        "app.services.notebook_service.run_task", return_value=fake_response
+    ) as mock_run_task:
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/search",
+            json={"query": "latest event 2026"},
+            headers=_auth(token),
+        )
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "content": "The 2026 event happened last week.",
+        "provider": "gemini",
+        "citations": [
+            {
+                "source_id": "https://example.com/article",
+                "chunk_id": None,
+                "excerpt": "It happened.",
+            }
+        ],
+    }
+    mock_run_task.assert_awaited_once()
+    call = mock_run_task.await_args_list[0]
+    assert call.args[0] == TaskType.INTERNET_SEARCH
+    assert call.args[1].query == "latest event 2026"
+
+
+async def test_search_404s_for_notebook_the_caller_does_not_own(
+    client: AsyncClient, unique_email: str
+) -> None:
+    token_a = await _register_and_login(client, unique_email)
+    token_b = await _register_and_login(client, "search-intruder@example.com")
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "Physics"}, headers=_auth(token_a)
+    )
+    notebook_id = notebook.json()["id"]
+
+    with patch("app.services.notebook_service.run_task") as mock_run_task:
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/search",
+            json={"query": "recent physics news"},
+            headers=_auth(token_b),
+        )
+
+    assert resp.status_code == 404
+    mock_run_task.assert_not_awaited()
+
+
+async def test_search_returns_502_when_orchestrator_fails(
+    client: AsyncClient, unique_email: str
+) -> None:
+    token = await _register_and_login(client, unique_email)
+
+    notebook = await client.post("/api/v1/notebooks", json={"name": "Math"}, headers=_auth(token))
+    notebook_id = notebook.json()["id"]
+
+    with patch(
+        "app.services.notebook_service.run_task",
+        side_effect=OrchestrationError("every provider failed"),
+    ):
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/search",
+            json={"query": "recent math news"},
+            headers=_auth(token),
+        )
+
+    assert resp.status_code == 502
+    assert "every provider failed" in resp.json()["detail"]
+
+
+async def test_image_search_returns_found_result(client: AsyncClient, unique_email: str) -> None:
+    token = await _register_and_login(client, unique_email)
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "Biology"}, headers=_auth(token)
+    )
+    notebook_id = notebook.json()["id"]
+
+    fake_response = AIResponse(
+        task_type=TaskType.TOPIC_IMAGE_SEARCH,
+        provider=ProviderName.WIKIMEDIA,
+        content=(
+            '{"image_url": "https://example.com/mito.jpg", '
+            '"attribution": "Jane Doe", "license": "CC-BY-SA-4.0", '
+            '"source_url": "https://commons.wikimedia.org/wiki/File:Mito.jpg"}'
+        ),
+        citations=[],
+        metadata={"found": "true"},
+    )
+    with patch(
+        "app.services.notebook_service.run_task", return_value=fake_response
+    ) as mock_run_task:
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/image-search",
+            json={"query": "mitochondria"},
+            headers=_auth(token),
+        )
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "found": True,
+        "image_url": "https://example.com/mito.jpg",
+        "attribution": "Jane Doe",
+        "license": "CC-BY-SA-4.0",
+        "source_url": "https://commons.wikimedia.org/wiki/File:Mito.jpg",
+    }
+    mock_run_task.assert_awaited_once()
+    call = mock_run_task.await_args_list[0]
+    assert call.args[0] == TaskType.TOPIC_IMAGE_SEARCH
+    assert call.args[1].query == "mitochondria"
+
+
+async def test_image_search_returns_not_found_result_distinctly(
+    client: AsyncClient, unique_email: str
+) -> None:
+    token = await _register_and_login(client, unique_email)
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "Obscure Topic"}, headers=_auth(token)
+    )
+    notebook_id = notebook.json()["id"]
+
+    fake_response = AIResponse(
+        task_type=TaskType.TOPIC_IMAGE_SEARCH,
+        provider=ProviderName.OPENVERSE,
+        content="",
+        citations=[],
+        metadata={"found": "false"},
+    )
+    with patch("app.services.notebook_service.run_task", return_value=fake_response):
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/image-search",
+            json={"query": "an extremely obscure niche topic"},
+            headers=_auth(token),
+        )
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "found": False,
+        "image_url": None,
+        "attribution": None,
+        "license": None,
+        "source_url": None,
+    }
+
+
+async def test_image_search_404s_for_notebook_the_caller_does_not_own(
+    client: AsyncClient, unique_email: str
+) -> None:
+    token_a = await _register_and_login(client, unique_email)
+    token_b = await _register_and_login(client, "image-search-intruder@example.com")
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "Chemistry"}, headers=_auth(token_a)
+    )
+    notebook_id = notebook.json()["id"]
+
+    with patch("app.services.notebook_service.run_task") as mock_run_task:
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/image-search",
+            json={"query": "titration setup"},
+            headers=_auth(token_b),
+        )
+
+    assert resp.status_code == 404
+    mock_run_task.assert_not_awaited()
+
+
+async def test_image_search_returns_502_when_orchestrator_fails(
+    client: AsyncClient, unique_email: str
+) -> None:
+    token = await _register_and_login(client, unique_email)
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "Astronomy"}, headers=_auth(token)
+    )
+    notebook_id = notebook.json()["id"]
+
+    with patch(
+        "app.services.notebook_service.run_task",
+        side_effect=OrchestrationError("every provider failed"),
+    ):
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/image-search",
+            json={"query": "black hole"},
+            headers=_auth(token),
+        )
+
+    assert resp.status_code == 502
+    assert "every provider failed" in resp.json()["detail"]

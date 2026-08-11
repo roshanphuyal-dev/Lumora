@@ -33,6 +33,13 @@ from ai.prompts.flashcard_generation_v1 import (
 from ai.prompts.flashcard_generation_v1 import (
     render_user_prompt as render_flashcard_prompt,
 )
+from ai.prompts.internet_search_synthesis_v1 import (
+    SYSTEM_PROMPT as INTERNET_SEARCH_SYSTEM_PROMPT,
+)
+from ai.prompts.internet_search_synthesis_v1 import SearchResultItemInput
+from ai.prompts.internet_search_synthesis_v1 import (
+    render_user_prompt as render_internet_search_prompt,
+)
 from ai.prompts.note_generation_v1 import SYSTEM_PROMPT as NOTE_SYSTEM_PROMPT
 from ai.prompts.note_generation_v1 import render_user_prompt as render_note_prompt
 from ai.prompts.quiz_generation_v1 import SYSTEM_PROMPT as QUIZ_SYSTEM_PROMPT
@@ -345,6 +352,31 @@ class GeminiClient:
             raise GeminiError(f"Gemini returned an invalid grading result: {exc}") from exc
         except Exception as exc:  # noqa: BLE001 - normalize provider failures
             raise GeminiError(f"Gemini quiz grading failed: {exc}") from exc
+
+    async def generate_internet_search_synthesis(
+        self, *, question: str, results: list[SearchResultItemInput]
+    ) -> str:
+        """Synthesize a cited, student-facing answer from normalized web search results.
+
+        `results` are untrusted external content, treated strictly as source material by
+        the prompt template (`ai/prompts/internet_search_synthesis_v1.py`), never as
+        instructions -- never a search provider's own "answer" mode passed straight
+        through (ADR 0012).
+        """
+        user_prompt = render_internet_search_prompt(question=question, results=results)
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=_MODEL_NAME,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=INTERNET_SEARCH_SYSTEM_PROMPT
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 - normalize provider failures
+            raise GeminiError(f"Gemini internet search synthesis failed: {exc}") from exc
+        if not response.text:
+            raise GeminiError("Gemini returned an empty internet search synthesis.")
+        return response.text
 
     async def stream_chat_response(
         self, *, question: str, context: str = "", history: str = ""

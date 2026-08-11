@@ -7,6 +7,7 @@ dependencies = [
     "google-genai>=2.14.0",
     "pydantic>=2.13.4",
     "httpx>=0.27",
+    "redis>=5.0",
 ]
 
 [build-system]
@@ -17,6 +18,8 @@ build-backend = "setuptools.build_meta"
 packages = [
     "ai",
     "ai.gemini",
+    "ai.image_search",
+    "ai.internet_search",
     "ai.notebooklm",
     "ai.opencode_zen",
     "ai.orchestrator",

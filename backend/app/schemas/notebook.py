@@ -53,3 +53,38 @@ class NotebookAskResponse(BaseModel):
     content: str
     provider: str
     citations: list[Citation] = Field(default_factory=list)
+
+
+class NotebookSearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=2000)
+
+
+class NotebookSearchResponse(BaseModel):
+    """Mirrors `NotebookAskResponse`'s shape -- `content` is Gemini's synthesized answer,
+    `citations` always derived from the search results themselves
+    (`ai/orchestrator/orchestrator.py:_run_internet_search`).
+    """
+
+    content: str
+    provider: str
+    citations: list[Citation] = Field(default_factory=list)
+
+
+class NotebookImageSearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=2000)
+
+
+class NotebookImageSearchResponse(BaseModel):
+    """`found` distinguishes "no usable image for this topic" (a real, expected outcome --
+    `found=False`, every other field `None`) from a failed request (raises instead of
+    returning a response at all -- see the route handler), mirroring
+    `AIResponse.metadata["found"]` from
+    `ai/orchestrator/orchestrator.py:_run_topic_image_search`. The frontend must branch on
+    `found`, not on whether `image_url` happens to be empty.
+    """
+
+    found: bool
+    image_url: str | None = None
+    attribution: str | None = None
+    license: str | None = None
+    source_url: str | None = None

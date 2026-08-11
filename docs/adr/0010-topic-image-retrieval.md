@@ -1,7 +1,7 @@
 # ADR 0010: Topic-Relevant Image Retrieval
 
 ## Status
-Proposed — targets `docs/ROADMAP.md` Phase 3 ("Image retrieval: Wikimedia/Openverse/Unsplash"). Not implemented. Requested during Phase 1/2 chatbox UI work (this session); deferred rather than built, to keep Phase 1/2 focus intact, but specified now so Phase 3 doesn't need to re-derive it.
+Accepted — targets `docs/ROADMAP.md` Phase 3 ("Image retrieval: Wikimedia/Openverse/Unsplash"). Requested during Phase 1/2 chatbox UI work; deferred rather than built at the time, to keep Phase 1/2 focus intact, and is now being implemented as specified here.
 
 ## Context
 While building the notebook chatbox, the ask was for a way to pull a real, topic-relevant image into an Ask answer (e.g. a diagram of the simplex method) instead of relying on the model to reference or fabricate one in Markdown. This is precisely the roadmap's Phase 3 "Image retrieval" line item, not a chatbox detail — building it now would cross phase boundaries the same way ADR 0009 flagged for chat streaming/persistence.

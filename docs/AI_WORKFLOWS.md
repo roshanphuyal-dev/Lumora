@@ -44,9 +44,10 @@ Documents each concrete AI pipeline end-to-end — trigger, steps, models involv
 5. **Not yet implemented:** response persisted to AI Chats; contributes to memory/personalization signal if it reveals a knowledge gap.
 
 ### 5. Internet Search → Gemini
-1. Query determined to need current/external information (not covered by notebook sources) — see routing step 4 in `docs/AI.md`.
-2. Tavily/Brave search executed, results cached (`docs/TOKEN_OPTIMIZATION.md`).
-3. Gemini synthesizes an answer citing external sources, clearly distinguished from notebook-grounded citations.
+**Implemented, end-to-end:** `TaskType.INTERNET_SEARCH` (ADR 0012, `docs/adr/0012-internet-search-integration.md`), `POST /notebooks/{id}/search` (`docs/API.md`), and a "Search the web" toggle on the Ask tab (`frontend/src/components/notebook/AskNotebookSection.tsx`).
+1. Student checks "Search the web" and asks a question needing current/external information (not covered by notebook sources) — see routing step 4 in `docs/AI.md`.
+2. Tavily executed first (`ai/internet_search/tavily_client.py`), read through a 10-minute Redis cache (`ai/internet_search/cache.py`) keyed on the normalized query + provider + `max_results`. On a Tavily failure, Brave (`ai/internet_search/brave_client.py`) is tried only if `BRAVE_SEARCH_API_KEY` is configured — never cached, per Brave's Search API terms (`docs/TOKEN_OPTIMIZATION.md`'s per-provider caching asymmetry). Both providers' raw responses are normalized into a provider-neutral `InternetSearchResult` (`ai/internet_search/schemas.py`) before leaving the client.
+3. Gemini synthesizes an answer from the normalized results (`ai/orchestrator/orchestrator.py:_run_internet_search`, `docs/PROMPTS.md`'s `internet_search_synthesis` template), citing external sources inline by URL — a provider's own "answer" mode is never used, keeping citation handling centralized. Citations are built from each result's URL/snippet (`AIResponse.citations`), clearly distinguished from notebook-grounded citations by their `source_id` being a URL rather than a NotebookLM source id.
 
 ### 6. Quiz Submission → Evaluation → Progress Tracking
 1. **Implemented:** user starts a quiz attempt (`QuizAttempt`, `backend/app/models/quiz_attempt.py`) via the Quiz Attempts API (`docs/API.md`), autosaves answers, then submits.

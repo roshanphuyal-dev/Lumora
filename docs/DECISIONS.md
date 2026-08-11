@@ -34,8 +34,9 @@ Index of Architecture Decision Records (ADRs) and the process for writing one. I
 | [0007](adr/0007-rag.md) | Why RAG | Accepted |
 | [0008](adr/0008-opencode-zen-fallback.md) | OpenCode Zen as Gemini Fallback | Accepted |
 | [0009](adr/0009-ai-chat-streaming-persistence-export.md) | AI Chat Streaming, Persistence, and PDF Export Architecture | Proposed |
-| [0010](adr/0010-topic-image-retrieval.md) | Topic-Relevant Image Retrieval | Proposed |
+| [0010](adr/0010-topic-image-retrieval.md) | Topic-Relevant Image Retrieval | Accepted |
 | [0011](adr/0011-quiz-evaluation-scoring-design.md) | Quiz Evaluation & Scoring Design | Accepted |
+| [0012](adr/0012-internet-search-integration.md) | Internet Search Integration (Tavily/Brave) | Accepted |
 
 <!-- Add new rows here as ADRs are written. Keep this table the only content of substance in this file. -->
 

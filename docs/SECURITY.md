@@ -32,7 +32,17 @@ All API keys (Gemini, NotebookLM, OpenRouter, Tavily/Brave, Supabase) live in en
 ### AI-Specific Risks
 - **Prompt injection via uploaded documents**: a malicious PDF/DOCX could contain text instructing the model to ignore prior instructions or exfiltrate data. Mitigation: treat document content as data, not instructions — system prompts must explicitly distinguish "source content" from "instructions," and generation output should be validated against expected schema before use.
 - **Data leakage through model providers**: understand and document each provider's data retention policy (Gemini, OpenRouter-routed models, NotebookLM) before sending sensitive student data through them.
-- **Search API results**: treat as untrusted external content, same injection caution as uploaded documents.
+- **Search API results**: treat as untrusted external content, same injection caution as uploaded documents — applies to `TaskType.INTERNET_SEARCH`'s Tavily/Brave results before they reach Gemini's synthesis pass (`docs/AI.md`).
+
+### Third-Party Provider Data Retention
+Student-derived query text (a search query or study topic) leaves the system to each of these providers. Full sourcing for the two search providers is in `docs/adr/0012-internet-search-integration.md`'s Decision section; this is the retention/privacy summary, not a duplicate of the pricing/latency detail there.
+
+- **Tavily** (`TaskType.INTERNET_SEARCH`, primary): **unresolved ambiguity, open item.** Its FAQ claims "zero data retention" and SOC 2 certification, but its actual privacy policy (updated 2025-11-24) says the opposite in substance — it collects query data, may use portions to improve future responses unless the contract says otherwise, may forward queries to third-party index providers in limited cases, and has no concrete query-specific deletion period (purpose-based retention only). **This is a hard pre-production gate** (ADR 0012's Consequences): written clarification or a DPA from Tavily is required before sending real student-derived queries, not just before "Phase 1" or any other phase boundary. Until resolved, treat Tavily query text as retained indefinitely for an unspecified purpose.
+- **Brave** (`TaskType.INTERNET_SEARCH`, optional fallback): retains API query records up to 90 days for billing/troubleshooting/abuse-prevention/legal reasons. States it doesn't collect end-user identifiers connecting a query to a person and argues API query data isn't "personal data" under GDPR on that basis — but Lumora can still associate a search with a user/conversation on its own side (the request is authenticated), so Lumora remains responsible for notice/minimization/lawful-basis/deletion regardless of Brave's position. True zero-data-retention is Enterprise-only, not the default plan used here.
+- **Wikimedia Commons** (`TaskType.TOPIC_IMAGE_SEARCH`, primary): keyless, publicly-run nonprofit API. No Lumora-specific data processing agreement exists; retention specifics for search-query server logs haven't been independently verified against Wikimedia's own privacy policy for this integration. <!-- TODO: confirm Wikimedia's query-log retention window before this is used with real student data at production scale, per ADR 0010's "document the provider's data-retention posture before shipping" callout -->
+- **Openverse** (`TaskType.TOPIC_IMAGE_SEARCH`, fallback): anonymous/keyless by default; an optional `OPENVERSE_CLIENT_ID`/`OPENVERSE_CLIENT_SECRET` OAuth2 app only raises the rate limit, it doesn't change what's sent (still just the search query). Retention specifics likewise not independently verified. <!-- TODO: same gate as Wikimedia above -->
+
+Neither Wikimedia nor Openverse queries are cached beyond this app's own 24h Redis cache (`ai/image_search/cache.py`); no provider-side caching claim is being made for them.
 
 ### Dependency & Supply Chain
 Pin dependencies (`CONTRIBUTING.md#dependency-policy`); review new dependencies before adding. Dependabot/`uv`/`pnpm` audit tooling to be wired into CI (`docs/DEPLOYMENT.md`).
@@ -40,4 +50,4 @@ Pin dependencies (`CONTRIBUTING.md#dependency-policy`); review new dependencies 
 ### Reporting
 <!-- TODO: add security contact / disclosure process once this repo has external contributors -->
 
-<!-- TODO: document each AI provider's data retention policy before Phase 1 ships -->
+<!-- TODO: document Gemini/OpenCode Zen/NotebookLM/OpenRouter's own data retention policies (only the newer Tavily/Brave/Wikimedia/Openverse integrations are covered above) -->

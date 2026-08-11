@@ -35,7 +35,7 @@ Supported from Phase 1 — students study at all hours; respect `prefers-color-s
 
 ### UX Principles (product-specific)
 - **Minimize cognitive load during study/quiz sessions** — avoid modal interruptions, autosave aggressively (quiz engine, notes editing).
-- **Make grounding visible** — citations/source links should be a first-class, always-visible UI element wherever AI-generated content appears, not a tucked-away footnote.
+- **Make grounding visible** — citations/source links should be a first-class, always-visible UI element wherever AI-generated content appears, not a tucked-away footnote (e.g. web search results render clickable external-link citations distinct from notebook-source citations, ADR 0012; retrieved topic images always show attribution/license text, never a bare `<img>`, ADR 0010).
 - **Progress should feel earned, not gamified-hollow** — streaks/stats reflect real study behavior, not engagement-bait mechanics.
 
 ### Component Conventions

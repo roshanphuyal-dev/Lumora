@@ -9,7 +9,11 @@ from app.schemas.notebook import (
     NotebookAskResponse,
     NotebookCreate,
     NotebookDetail,
+    NotebookImageSearchRequest,
+    NotebookImageSearchResponse,
     NotebookRead,
+    NotebookSearchRequest,
+    NotebookSearchResponse,
     NotebookSourceCreate,
     NotebookSourceRead,
 )
@@ -117,3 +121,46 @@ async def ask_notebook_question(
         db, current_user.id, notebook_id, payload.question
     )
     return NotebookAskResponse(content=content, provider=provider, citations=citations)
+
+
+@router.post("/{notebook_id}/search", response_model=NotebookSearchResponse)
+async def search_notebook_web(
+    notebook_id: uuid.UUID,
+    payload: NotebookSearchRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> NotebookSearchResponse:
+    """Search the open internet for current/external information not covered by the
+    notebook's indexed sources (`TaskType.INTERNET_SEARCH`, Tavily/Brave + Gemini
+    synthesis, ADR 0012). 404s for a notebook the caller doesn't own.
+    """
+    content, provider, citations = await notebook_service.search_web(
+        db, current_user.id, notebook_id, payload.query
+    )
+    return NotebookSearchResponse(content=content, provider=provider, citations=citations)
+
+
+@router.post("/{notebook_id}/image-search", response_model=NotebookImageSearchResponse)
+async def search_notebook_topic_image(
+    notebook_id: uuid.UUID,
+    payload: NotebookImageSearchRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> NotebookImageSearchResponse:
+    """Look up a topic-relevant image (`TaskType.TOPIC_IMAGE_SEARCH`, Wikimedia primary,
+    Openverse fallback, ADR 0010). `found=false` (all other fields `None`) means no usable
+    image was found for this topic, a real outcome distinct from a request failure (502).
+    404s for a notebook the caller doesn't own.
+    """
+    result = await notebook_service.search_topic_image(
+        db, current_user.id, notebook_id, payload.query
+    )
+    if result is None:
+        return NotebookImageSearchResponse(found=False)
+    return NotebookImageSearchResponse(
+        found=True,
+        image_url=result.image_url,
+        attribution=result.attribution,
+        license=result.license,
+        source_url=result.source_url,
+    )

@@ -39,7 +39,7 @@ The full catalogue is now covered — nothing left unbuilt under this heading.
 ### Quiz Generator (Phase 3)
 Done: generation UI (`QuizzesSection`, notebook detail page) creates a quiz grounded via NotebookLM retrieval, async (`status: pending → generating → done/failed`, `docs/API.md`'s Quiz API). **8 of 8 DB-supported question types are actually generatable**: mcq, true/false, fill-in-blank, matching, assertion-reason, short answer, long answer, case study (`ai/orchestrator/schemas.py:QUESTION_TYPES`, `docs/AI.md#routing-logic`). `assertion_reason` generation is schema-validated: `_validate_assertion_reason_items` (`ai/orchestrator/orchestrator.py`) rejects any generated item whose `options`/`correct_answer` drift from the canonical 4-string `ASSERTION_REASON_OPTIONS` set, raising rather than silently persisting an ungradeable question. "Scenario questions" (distinct from case studies) was never built as a separate type. Difficulty is tagged per-question at generation time (`easy`/`medium`/`hard`/`mixed`) — see Quiz Engine below for why this isn't "adaptive difficulty" as a student-facing behavior.
 
-Not built: internet search integration and image retrieval for quiz content (Tavily/Brave, Wikimedia/Openverse/Unsplash) — see Internet Research below, still Not Started.
+Not built: quiz content doesn't draw on internet search or image retrieval yet — `TaskType.INTERNET_SEARCH` (Tavily/Brave, ADR 0012) and `TaskType.TOPIC_IMAGE_SEARCH` (Wikimedia/Openverse, ADR 0010) exist at the orchestrator layer (see Internet Research below) but neither is wired into quiz generation.
 
 ### Quiz Engine (Phase 3)
 Done: `QuizTakingView`/`QuizReviewView` (`frontend/src/components/quiz/`) — timer, question navigation, per-question autosave (`PATCH .../attempts/{id}`, rejects past the time limit rather than auto-submitting), submission, randomized question order per attempt, and a post-grading review view with per-question feedback (`AnswerReview.tsx`).
@@ -58,6 +58,10 @@ Ask questions, explain simply/deeply, generate examples, follow-ups, Socratic te
 
 ### Internet Research (Phase 3)
 Current information, recent studies, images, references, external resources, research paper search, fact verification.
+
+Done, end-to-end (orchestrator → API → UI): `TaskType.INTERNET_SEARCH` (ADR 0012, `docs/adr/0012-internet-search-integration.md`) — Tavily primary, Brave optional fallback (only attempted when `BRAVE_SEARCH_API_KEY` is configured), Gemini synthesizes a cited answer from the normalized results (`ai/internet_search/`, `docs/AI_WORKFLOWS.md#5`), exposed via `POST /notebooks/{id}/search` (`docs/API.md`) and a "Search the web" checkbox on the Ask tab (`AskNotebookSection.tsx`) that renders results as a distinct `kind: "web_search"` chat message with clickable external-link citations (`ChatMessage.tsx`). `TaskType.TOPIC_IMAGE_SEARCH` (ADR 0010) is also done end-to-end at the same shape — Wikimedia Commons primary, Openverse fallback, pure retrieval with no LLM synthesis step (`ai/image_search/`), exposed via `POST /notebooks/{id}/image-search` and a per-assistant-message "Find an image" action rendering `ImageResultCard` (visible attribution/license, per `.claude/rules/ui.md`).
+
+Not built: neither task type is wired into quiz generation yet (see Quiz Generator above); research paper search specifically isn't covered by either search provider.
 
 ### Overleaf Export (Phase 2+)
 LaTeX notes, assignments, reports, formula sheets, tables, figures. Not started — distinct from the plain PDF export already shipped for AI Chat (client-side, from the rendered DOM, `frontend/src/lib/chat-export.ts`), which is a generic conversation export, not a LaTeX/Overleaf pipeline for generated study materials.

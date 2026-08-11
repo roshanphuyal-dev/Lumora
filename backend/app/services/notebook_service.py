@@ -6,11 +6,19 @@ for the pattern this mirrors (worker-only lookups keyed by id alone, called
 only on ids the backend itself already checked ownership for).
 """
 
+import json
 import logging
 import uuid
 
 from ai.orchestrator.orchestrator import OrchestrationError, run_task
-from ai.orchestrator.schemas import Citation, NotebookQueryRequest, TeachingExplanationRequest
+from ai.orchestrator.schemas import (
+    Citation,
+    InternetSearchRequest,
+    NotebookQueryRequest,
+    TeachingExplanationRequest,
+    TopicImageResult,
+    TopicImageSearchRequest,
+)
 from ai.orchestrator.task_types import TaskType
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
@@ -140,6 +148,56 @@ async def ask_question(
         ) from exc
 
     return response.content, response.provider.value, response.citations
+
+
+async def search_web(
+    db: AsyncSession, owner_id: uuid.UUID, notebook_id: uuid.UUID, query: str
+) -> tuple[str, str, list[Citation]]:
+    """Ask a current-events/external-fact question via `TaskType.INTERNET_SEARCH`
+    (Tavily/Brave search + Gemini synthesis, ADR 0012).
+
+    404s for a notebook the caller doesn't own, same ownership check as `ask_question`.
+    Unlike `ask_question`, this never consults the notebook's own indexed sources -- it's
+    for material outside what the notebook already knows.
+    """
+    await get_owned_notebook(db, owner_id, notebook_id)
+
+    try:
+        response = await run_task(TaskType.INTERNET_SEARCH, InternetSearchRequest(query=query))
+    except OrchestrationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Couldn't search the web right now: {exc}",
+        ) from exc
+
+    return response.content, response.provider.value, response.citations
+
+
+async def search_topic_image(
+    db: AsyncSession, owner_id: uuid.UUID, notebook_id: uuid.UUID, query: str
+) -> TopicImageResult | None:
+    """Look up a topic-relevant image via `TaskType.TOPIC_IMAGE_SEARCH` (Wikimedia primary,
+    Openverse fallback, ADR 0010).
+
+    404s for a notebook the caller doesn't own, same ownership check as `ask_question`.
+    Returns `None` when `AIResponse.metadata["found"] == "false"` -- a real "no image for
+    this topic" outcome, not an error (`ai/orchestrator/orchestrator.py:_run_topic_image_search`'s
+    docstring) -- distinct from an `OrchestrationError`, which propagates as a 502 here.
+    """
+    await get_owned_notebook(db, owner_id, notebook_id)
+
+    try:
+        response = await run_task(TaskType.TOPIC_IMAGE_SEARCH, TopicImageSearchRequest(query=query))
+    except OrchestrationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Couldn't search for an image right now: {exc}",
+        ) from exc
+
+    if response.metadata.get("found") != "true":
+        return None
+
+    return TopicImageResult.model_validate(json.loads(response.content))
 
 
 async def attach_source(

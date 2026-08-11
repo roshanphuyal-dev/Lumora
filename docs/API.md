@@ -31,6 +31,8 @@ The contract reference for the FastAPI backend: endpoint groups, auth model, ver
   - `POST /notebooks/{id}/sources` — attach a `document_id` as a source; requires the document's `parse_status == done` (409 otherwise); dispatches NotebookLM indexing (Celery) and returns the source with `indexing_status=pending`.
   - `DELETE /notebooks/{id}/sources/{source_id}` — detach a source.
   - `POST /notebooks/{id}/ask` — plain (ungrounded) teaching-explanation question via the orchestration layer (Gemini, OpenCode Zen fallback, ADR 0008); returns `{content, provider}`. Single-turn, not persisted — superseded for multi-turn use by the Chat API below; kept for now as the simple one-shot path.
+  - `POST /notebooks/{id}/search` — body `{query}`; internet search for current/external information not covered by the notebook's own sources (`TaskType.INTERNET_SEARCH`: Tavily primary, Brave fallback if configured, Gemini synthesizes the cited answer — ADR 0012). Returns `{content, provider, citations}`, same shape as `/ask`. Single-turn, not persisted. 502 if every search provider fails.
+  - `POST /notebooks/{id}/image-search` — body `{query}`; topic-relevant image lookup (`TaskType.TOPIC_IMAGE_SEARCH`: Wikimedia Commons primary, Openverse fallback — ADR 0010). Returns `{found: bool, image_url?, attribution?, license?, source_url?}` — `found=false` (all other fields `null`) is a real "no image for this topic" outcome, distinct from a 502 (every provider failed as a request).
 - **Notebook Search API** — semantic search within a notebook.
 - **Chat API** (`/api/v1/notebooks/{notebook_id}/conversations`, scoped to `user_id` = authenticated user; streaming + persistence architecture per ADR 0009):
   - `POST /notebooks/{id}/conversations` — create a conversation (optional `title`); returns `ConversationRead`.
@@ -66,8 +68,7 @@ The contract reference for the FastAPI backend: endpoint groups, auth model, ver
   - `GET /notebooks/{id}/quizzes/{quiz_id}/attempts/{attempt_id}` — the poll target. **Security boundary**: while `status` is `in_progress`/`submitted`/`grading`, returns `QuizAttemptRead` (questions in the answer-key-free `QuestionRead` shape — no `correct_answer`/`reference_answer`/`explanation`/`citation` anywhere in the response). Only once `status=graded` does it return `QuizAttemptReviewRead` (questions in `QuestionReviewRead`, paired with the student's `QuizAttemptAnswer` — `student_answer`/`is_correct`/`score`/`ai_feedback`/`topic_tag` — plus the attempt's total `score`/`max_score`).
   - `GET /notebooks/{id}/quizzes/{quiz_id}/attempts` — paginated list of the user's attempts for this quiz, lightweight `QuizAttemptSummary` shape (no nested questions).
   - A graded attempt's missed questions (deterministic or AI-graded, wherever `topic_tag` is set) increment `weak_topics.missed_count` for `(user_id, notebook_id, topic)` — feeds adaptive tutoring (`docs/AI.md#memory--personalization`), not itself exposed via this API group yet.
-- **Search API** — internet search proxy (Tavily/Brave), cached.
-- **Image API** — image retrieval proxy (Wikimedia/Openverse/Unsplash), cached.
+- Internet search and topic-image lookup are implemented as `POST /notebooks/{id}/search` and `POST /notebooks/{id}/image-search` under the Notebook API above, not standalone groups.
 - **Progress API** — study stats, streaks, mastery.
 - **Analytics API** — performance graphs, heatmaps.
 - **Export API** — Overleaf/LaTeX/PDF/DOCX/Markdown export.

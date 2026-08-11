@@ -58,6 +58,14 @@ class TaskType(enum.StrEnum):
     # separate, later task type -- not implemented here.
     QUIZ_GENERATION = "quiz_generation"
 
+    # Topic-relevant image retrieval -> Wikimedia Commons primary, Openverse fallback
+    # (ADR 0010, docs/adr/0010-topic-image-retrieval.md). Pure retrieval, no LLM synthesis
+    # step and no Gemini/OpenCode Zen involvement at all -- a student's topic/question text
+    # (not the full answer) is looked up against a keyless/low-friction-key image search
+    # provider and the raw result (image_url/attribution/license/source_url) is returned
+    # as-is.
+    TOPIC_IMAGE_SEARCH = "topic_image_search"
+
     # Free-text quiz answer grading -> Gemini structured output, one batched call per quiz
     # attempt covering every short_answer/long_answer/case_study question in it (never one
     # call per question -- .claude/rules/performance.md's no-AI-call-in-a-loop rule).
@@ -67,3 +75,11 @@ class TaskType(enum.StrEnum):
     # batched multi-question structured grading output is too fragile to best-effort-parse
     # as free text (ADR 0011).
     QUIZ_GRADING = "quiz_grading"
+
+    # Current-events/external-fact-dependent question -> Tavily search first, Brave as an
+    # optional fallback only if BRAVE_SEARCH_API_KEY is configured, then Gemini synthesizes
+    # a cited student-facing answer from the normalized results (Routing Logic step 4,
+    # docs/AI.md#routing-logic; ADR 0012). Never a provider "answer" mode passed straight
+    # through -- pedagogical judgment and citation handling stay centralized in the
+    # orchestration layer, same reasoning as NOTEBOOK_QUERY feeding TEACHING_EXPLANATION.
+    INTERNET_SEARCH = "internet_search"

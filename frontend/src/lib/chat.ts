@@ -1,5 +1,9 @@
 import { apiFetch, apiFetchResponse } from "@/lib/api"
 
+// Same `Citation` shape the backend uses for both `/ask` (notebook-grounded) and
+// `/search` (web-grounded) responses -- kept as one type since the fields are identical,
+// even though the two flows populate them differently (`chunk_id` for notebook chunks,
+// `source_id` holding a URL + `excerpt` a snippet for web results).
 export interface ChatCitation {
   source_id?: string
   chunk_id?: string | null

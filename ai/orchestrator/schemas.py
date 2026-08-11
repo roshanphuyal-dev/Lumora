@@ -24,6 +24,8 @@ class ProviderName(enum.StrEnum):
     NOTEBOOKLM = "notebooklm"
     GEMINI = "gemini"
     OPENCODE_ZEN = "opencode_zen"
+    WIKIMEDIA = "wikimedia"
+    OPENVERSE = "openverse"
 
 
 class Citation(BaseModel):
@@ -333,6 +335,32 @@ class QuestionGradeResult(BaseModel):
     topic_tag: str
 
 
+class TopicImageResult(BaseModel):
+    """One retrieved topic-relevant image — the structured-output contract
+    `TaskType.TOPIC_IMAGE_SEARCH` returns (ADR 0010, `ai/image_search/client.py`).
+
+    All four fields are required, not optional (ADR 0010 line 18): `attribution`/`license`
+    aren't cosmetic extras here — both Wikimedia Commons and Openverse content carries
+    CC-family licenses that require attribution display wherever the image is shown, so a
+    result missing either isn't a usable result (`ai/image_search/client.py` skips any
+    provider hit it can't populate both fields for, treating it the same as "no match"
+    rather than fabricating a placeholder).
+    """
+
+    image_url: str
+    attribution: str
+    license: str
+    source_url: str
+
+
+class TopicImageSearchRequest(BaseModel):
+    """Input for `TaskType.TOPIC_IMAGE_SEARCH` — a topic/question string, not full answer
+    text (ADR 0010) — e.g. "the simplex method", not a paragraph explaining it.
+    """
+
+    query: str
+
+
 class StudioArtifactCreateRequest(BaseModel):
     """Input for `TaskType.STUDIO_ARTIFACT_CREATE`.
 
@@ -345,3 +373,17 @@ class StudioArtifactCreateRequest(BaseModel):
     artifact_type: str
     notebooklm_notebook_id: str
     options: dict[str, str | int] = Field(default_factory=dict)
+
+
+class InternetSearchRequest(BaseModel):
+    """Input for `TaskType.INTERNET_SEARCH` — a student question needing current/external
+    information not covered by a notebook's indexed sources (ADR 0012, Routing Logic step
+    4, `docs/AI.md#routing-logic`).
+
+    No `citations` field, unlike most other request types here: citations are derived from
+    the search results themselves (`ai/orchestrator/orchestrator.py:_run_internet_search`
+    builds them from `InternetSearchItem.url`), not supplied by the caller.
+    """
+
+    query: str
+    max_results: int = 5

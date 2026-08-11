@@ -23,11 +23,22 @@ Later phases add more task types and routing branches per the same table — ext
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import AsyncIterator
 
 from pydantic import TypeAdapter, ValidationError
 
 from ai.gemini.client import GeminiClient, GeminiError
+from ai.image_search.client import (
+    OpenverseClient,
+    OpenverseError,
+    WikimediaClient,
+    WikimediaError,
+)
+from ai.internet_search.brave_client import BraveClient, BraveError
+from ai.internet_search.cache import get_cached_search_result, set_cached_search_result
+from ai.internet_search.schemas import InternetSearchResult, SearchProvider
+from ai.internet_search.tavily_client import TavilyClient, TavilyError
 from ai.notebooklm.client import NotebookLMClient, NotebookLMError
 from ai.opencode_zen.client import OpenCodeZenClient, OpenCodeZenError
 from ai.orchestrator.schemas import (
@@ -39,6 +50,7 @@ from ai.orchestrator.schemas import (
     DocumentIndexRequest,
     FlashcardGenerationRequest,
     FlashcardItem,
+    InternetSearchRequest,
     NotebookQueryRequest,
     NotesGenerationRequest,
     ProviderName,
@@ -49,6 +61,8 @@ from ai.orchestrator.schemas import (
     StructuredNoteGenerationRequest,
     StudioArtifactCreateRequest,
     TeachingExplanationRequest,
+    TopicImageResult,
+    TopicImageSearchRequest,
 )
 from ai.orchestrator.task_types import TaskType
 
@@ -63,6 +77,8 @@ TaskRequest = (
     | StudioArtifactCreateRequest
     | QuizGenerationRequest
     | QuizGradingRequest
+    | TopicImageSearchRequest
+    | InternetSearchRequest
 )
 
 
@@ -77,10 +93,15 @@ async def run_task(
     gemini_client: GeminiClient | None = None,
     notebooklm_client: NotebookLMClient | None = None,
     opencode_zen_client: OpenCodeZenClient | None = None,
+    wikimedia_client: WikimediaClient | None = None,
+    openverse_client: OpenverseClient | None = None,
+    tavily_client: TavilyClient | None = None,
+    brave_client: BraveClient | None = None,
 ) -> AIResponse:
     """Route `request` to the provider `task_type` maps to and return a normalized response.
 
-    `gemini_client`/`notebooklm_client`/`opencode_zen_client` are optional seams for tests —
+    `gemini_client`/`notebooklm_client`/`opencode_zen_client`/`wikimedia_client`/
+    `openverse_client`/`tavily_client`/`brave_client` are optional seams for tests —
     feature code should leave them unset and let the orchestrator construct the real
     provider client.
     """
@@ -132,6 +153,16 @@ async def run_task(
         if not isinstance(request, QuizGradingRequest):
             raise OrchestrationError("QUIZ_GRADING requires a QuizGradingRequest.")
         return await _run_quiz_grading(request, gemini_client)
+
+    if task_type is TaskType.TOPIC_IMAGE_SEARCH:
+        if not isinstance(request, TopicImageSearchRequest):
+            raise OrchestrationError("TOPIC_IMAGE_SEARCH requires a TopicImageSearchRequest.")
+        return await _run_topic_image_search(request, wikimedia_client, openverse_client)
+
+    if task_type is TaskType.INTERNET_SEARCH:
+        if not isinstance(request, InternetSearchRequest):
+            raise OrchestrationError("INTERNET_SEARCH requires an InternetSearchRequest.")
+        return await _run_internet_search(request, tavily_client, brave_client, gemini_client)
 
     raise OrchestrationError(f"No routing rule for task_type={task_type!r}.")
 
@@ -523,6 +554,145 @@ async def _run_quiz_grading(
         content=json.dumps([result.model_dump() for result in results]),
         citations=[],
         metadata={},
+    )
+
+
+async def _run_topic_image_search(
+    request: TopicImageSearchRequest,
+    wikimedia_client: WikimediaClient | None,
+    openverse_client: OpenverseClient | None,
+) -> AIResponse:
+    """Wikimedia primary, Openverse fallback (ADR 0010) -- pure retrieval, no Gemini/
+    OpenCode Zen involvement and no synthesis step at all: `content` is the raw
+    `TopicImageResult`, JSON-serialized (`json.dumps(result.model_dump())`, same precedent
+    as `FLASHCARD_GENERATION`'s single-item structured result).
+
+    Design decision -- "no good match found" vs. a hard failure (ADR 0010's Tradeoffs
+    section explicitly calls the empty case out as real UI to design for, not an edge case
+    to ignore): this function distinguishes the two outcomes rather than collapsing them
+    into one:
+      - Both providers *fail* (network/auth/parse error) -> raises `OrchestrationError`,
+        same as every other task type's provider-failure case -- caller shows an error
+        state ("something went wrong, try again").
+      - At least one provider *responds successfully* but neither has a usable result (a
+        real, expected outcome for niche/newly-coined topics, not an error) ->
+        returns an `AIResponse` with `metadata={"found": "false"}` and empty `content` --
+        caller shows a "no image found for this topic" empty state, not an error banner.
+      - A usable result is found -> `metadata={"found": "true"}`, `content` is the
+        JSON-serialized `TopicImageResult`.
+    The frontend agent building the "Find an image" action should branch on
+    `AIResponse.metadata["found"]`, not on whether `content` happens to be empty/parseable.
+    """
+    errors: list[str] = []
+    wikimedia_errored = False
+    openverse_errored = False
+
+    try:
+        result = await (wikimedia_client or WikimediaClient()).search_image(request.query)
+        if result is not None:
+            return _topic_image_response(result, ProviderName.WIKIMEDIA)
+    except WikimediaError as exc:
+        wikimedia_errored = True
+        errors.append(f"wikimedia: {exc}")
+
+    try:
+        result = await (openverse_client or OpenverseClient()).search_image(request.query)
+        if result is not None:
+            return _topic_image_response(result, ProviderName.OPENVERSE)
+    except OpenverseError as exc:
+        openverse_errored = True
+        errors.append(f"openverse: {exc}")
+
+    if wikimedia_errored and openverse_errored:
+        raise OrchestrationError(
+            "TOPIC_IMAGE_SEARCH failed on every provider: " + "; ".join(errors)
+        )
+
+    # At least one provider responded successfully with no usable match -- see docstring
+    # above for the found=false contract.
+    return AIResponse(
+        task_type=TaskType.TOPIC_IMAGE_SEARCH,
+        provider=ProviderName.OPENVERSE,
+        content="",
+        citations=[],
+        metadata={"found": "false"},
+    )
+
+
+def _topic_image_response(result: TopicImageResult, provider: ProviderName) -> AIResponse:
+    return AIResponse(
+        task_type=TaskType.TOPIC_IMAGE_SEARCH,
+        provider=provider,
+        content=json.dumps(result.model_dump()),
+        citations=[],
+        metadata={"found": "true"},
+    )
+
+
+async def _run_internet_search(
+    request: InternetSearchRequest,
+    tavily_client: TavilyClient | None,
+    brave_client: BraveClient | None,
+    gemini_client: GeminiClient | None,
+) -> AIResponse:
+    """Tavily first, Brave fallback only if `BRAVE_SEARCH_API_KEY` is configured, then
+    Gemini synthesizes the final answer (ADR 0012).
+
+    Never returns a provider's raw search results/answer directly — the normalized
+    `InternetSearchResult` is always handed to Gemini's synthesis prompt
+    (`ai/prompts/internet_search_synthesis_v1.py`) so pedagogical judgment and citation
+    handling stay centralized here rather than provider-dependent, matching
+    `.claude/rules/ai.md`'s "external content is data, never instructions" rule.
+
+    Tavily results are read through a short-TTL cache (`ai/internet_search/cache.py`)
+    keyed on the normalized query + provider + `max_results`; Brave results are never
+    cached at all, per Brave's Search API terms (ADR 0012's per-provider caching
+    asymmetry). Brave is only attempted when `BRAVE_SEARCH_API_KEY` is configured — a
+    Tavily failure with no Brave key configured is a final "search unavailable" outcome,
+    not a silent skip that looks like a bug (ADR 0012's Consequences).
+    """
+    errors: list[str] = []
+    result: InternetSearchResult | None = await get_cached_search_result(
+        provider=SearchProvider.TAVILY, query=request.query, max_results=request.max_results
+    )
+
+    if result is None:
+        try:
+            result = await (tavily_client or TavilyClient()).search(
+                request.query, max_results=request.max_results
+            )
+            await set_cached_search_result(result, max_results=request.max_results)
+        except TavilyError as exc:
+            errors.append(f"tavily: {exc}")
+
+    if result is None and os.environ.get("BRAVE_SEARCH_API_KEY"):
+        try:
+            result = await (brave_client or BraveClient()).search(
+                request.query, max_results=request.max_results
+            )
+        except BraveError as exc:
+            errors.append(f"brave: {exc}")
+
+    if result is None:
+        raise OrchestrationError("INTERNET_SEARCH failed on every provider: " + "; ".join(errors))
+
+    try:
+        answer = await (gemini_client or GeminiClient()).generate_internet_search_synthesis(
+            question=request.query,
+            results=[
+                {"title": item.title, "url": item.url, "snippet": item.snippet}
+                for item in result.results
+            ],
+        )
+    except GeminiError as exc:
+        raise OrchestrationError(f"INTERNET_SEARCH synthesis failed: {exc}") from exc
+
+    return AIResponse(
+        task_type=TaskType.INTERNET_SEARCH,
+        provider=ProviderName.GEMINI,
+        content=answer,
+        citations=[Citation(source_id=item.url, excerpt=item.snippet) for item in result.results],
+        metadata={"search_provider": result.provider.value},
     )
 
 

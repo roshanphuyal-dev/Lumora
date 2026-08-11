@@ -40,10 +40,10 @@ PostgreSQL via Supabase, `pgvector` extension enabled for embeddings. SQLAlchemy
 | `study_sessions` | Study time/activity tracking |
 | `conversations` | A chat thread scoped to one notebook + user |
 | `messages` | Individual turns (user/assistant) within a conversation, with per-message citations |
-| `images` | Retrieved/cached image references |
+| `images` | Reserved; not built. Retrieved topic images (`TaskType.TOPIC_IMAGE_SEARCH`, ADR 0010) are not persisted here — they're cached in Redis only (`ai/image_search/cache.py`, 24h TTL), not written to Postgres |
 | `embeddings` | Vector embeddings (pgvector) linked to source chunks |
 | `progress` / `analytics` | Rolled-up performance metrics |
-| `search_cache` | Cached search API results |
+| `search_cache` | Reserved; not built. Internet search results (`TaskType.INTERNET_SEARCH`, ADR 0012) are cached in Redis instead (`ai/internet_search/cache.py`, per-provider TTL) — a general Postgres-backed cache table was explicitly rejected as premature in ADR 0012's Alternatives Considered |
 | `generated_materials` | NotebookLM Studio artifacts (audio/report/slides/infographic/mindmap/data_table) — one polymorphic table rather than six near-duplicate ones |
 
 ### Relationships (high level)
