@@ -43,6 +43,12 @@ Domain-specific detail lives in `.claude/rules/`: `backend.md`, `frontend.md`, `
 - Every new architectural or dependency decision of consequence gets an ADR in `docs/adr/` (see `docs/DECISIONS.md`).
 - Update `CHANGELOG.md` for user-facing changes; update the relevant `docs/*.md` in the same PR as the code it describes.
 
+## Delegation
+
+- Keep the main thread free: delegate investigation to the `Explore` subagent or `codex:rescue`, and implementation to the domain subagents (`backend`, `frontend`, `database`, `ai`, `tester`, `documentation`) rather than doing multi-file work inline.
+- Use `codex:rescue` for a second-opinion pass on risky/high-stakes diffs (schema changes, AI prompt/schema edits, anything where a silent bug reaches production) before calling a task done.
+- Fan out independent subagent work in parallel; sequence only where a real dependency exists (e.g. schema before the code that consumes it).
+
 ## Common Commands
 
 | Task | Command |
