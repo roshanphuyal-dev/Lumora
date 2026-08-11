@@ -32,8 +32,8 @@ The catalogue of actual prompt templates used across the AI pipelines — the co
 | `note_generation` | Gemini | Notes/Study Guide/Cheat Sheet/Formula Sheet workflow | structured markdown |
 | `structured_note_generation` | Gemini | Mnemonics/Timeline/Comparison Chart workflow | JSON list `{label, value, detail, citation}` (mnemonics/timeline) or `{subjects, attributes, rows}` table (comparison chart) — structured output, `response_schema`, no OpenCode Zen fallback |
 | `flashcard_generation` | Gemini + NotebookLM | Flashcards workflow | JSON list `{front, back, citation}` (structured output, `response_schema`) |
-| `quiz_generation` | Gemini | Quiz workflow | JSON list of question objects |
-| `quiz_grading` | Gemini | Evaluation workflow | JSON `{score, mistakes[], feedback}` |
+| `quiz_generation` | Gemini | Quiz workflow | JSON list of question objects, one flat shape covering all 7 question types (`mcq`/`true_false`/`fill_blank`/`matching`/`short_answer`/`long_answer`/`case_study`), discriminated by `question_type` — structured output, `response_schema`, no OpenCode Zen fallback |
+| `quiz_grading` | Gemini | Evaluation workflow (free-text questions only, ADR 0011) | JSON list of `{question_id, score, is_correct, feedback, topic_tag}`, one batched call per attempt covering all `short_answer`/`long_answer`/`case_study` questions — structured output, `response_schema`, no OpenCode Zen fallback |
 | `chat_response` | Gemini | AI Chat workflow | markdown + citations |
 | `formatting_pass` | DeepSeek/Qwen | any cheap-tier reformat step | markdown/JSON |
 

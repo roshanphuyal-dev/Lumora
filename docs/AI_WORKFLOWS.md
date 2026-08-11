@@ -32,9 +32,9 @@ Documents each concrete AI pipeline end-to-end — trigger, steps, models involv
 
 ### 3. Upload Document → Quiz
 1–2. Same as above.
-3. Orchestrator requests relevant chunks from NotebookLM for the target topic/scope.
-4. Gemini generates quiz questions (type per user selection: MCQ/true-false/short-answer/etc.) with grounded distractors.
-5. Quiz + Questions persisted; difficulty tagged for adaptive selection (`docs/DATABASE.md`).
+3. Orchestrator requests relevant chunks from NotebookLM for the target topic/scope (`TaskType.NOTEBOOK_QUERY`, same retrieval step as workflows 1/2).
+4. **Implemented (generation only):** Gemini generates the requested mix of the 7 supported question types (`mcq`/`true_false`/`fill_blank`/`matching`/`short_answer`/`long_answer`/`case_study`) via structured output (`TaskType.QUIZ_GENERATION`, `ai/orchestrator/orchestrator.py`, `docs/PROMPTS.md`'s `quiz_generation` template) — one flat JSON shape per question (`ai/orchestrator/schemas.py:QuestionItem`) discriminated by `question_type`, carrying `correct_answer` (objective types) or `reference_answer` (free-text types), a `difficulty` tag per item, and a per-item `citation` back to source chunks. No OpenCode Zen fallback, same precedent as `STRUCTURED_NOTE_GENERATION` (`docs/AI.md#routing-logic`). "Grounded distractors" for `mcq` are instructed via the prompt, not separately verified against source chunks.
+5. **Implemented:** Quiz + Questions persistence (`docs/DATABASE.md`) and backend wiring (Milestone 3, `docs/API.md`'s Quiz API). Quiz attempt/submission/grading (workflow 6 below) is separate backend wiring, also implemented (Milestone 7).
 
 ### 4. User Question → RAG → NotebookLM → Gemini (AI Chat)
 1. User asks a question in a notebook-scoped chat.
@@ -49,11 +49,11 @@ Documents each concrete AI pipeline end-to-end — trigger, steps, models involv
 3. Gemini synthesizes an answer citing external sources, clearly distinguished from notebook-grounded citations.
 
 ### 6. Quiz Submission → Evaluation → Progress Tracking
-1. User submits quiz attempt.
-2. Gemini grades (structured JSON: score, per-question correctness, explanation of mistakes).
-3. Weak topics extracted and written to the student's long-term profile (`docs/AI.md#memory--personalization`).
-4. Progress/Analytics tables updated (streak, mastery, accuracy trend, `docs/DATABASE.md`).
-5. Personalized improvement plan/recommendations surfaced on the dashboard.
+1. **Implemented:** user starts a quiz attempt (`QuizAttempt`, `backend/app/models/quiz_attempt.py`) via the Quiz Attempts API (`docs/API.md`), autosaves answers, then submits.
+2. **Implemented:** on submit, the attempt's questions split by grading path (ADR 0011) — `mcq`/`true_false`/`fill_blank`/`matching`/`assertion_reason` are graded deterministically in plain Python, no AI call (`backend/app/services/quiz_attempt_service.py`). `short_answer`/`long_answer`/`case_study` questions are graded in a single batched Gemini call (`TaskType.QUIZ_GRADING`, `ai/orchestrator/orchestrator.py`, `docs/PROMPTS.md`'s `quiz_grading` template) covering every free-text question in the attempt — never one call per question (`.claude/rules/performance.md`) — dispatched via `app/workers/quiz_grading_tasks.py`; skipped entirely for all-objective quizzes. Returns one `QuestionGradeResult` per question (`score` 0.0–1.0, `is_correct`, `feedback`, `topic_tag`), matched back to its question by `question_id`. No OpenCode Zen fallback, same precedent as `QUIZ_GENERATION` (ADR 0011).
+3. **Implemented:** both grading paths' results persist into `QuizAttemptAnswer` (`score`/`is_correct`/`ai_feedback`/`topic_tag`), the attempt's overall `score`/`max_score` is computed, and every low-scoring `topic_tag` (currently only AI-graded questions carry one — deterministic types have no `Question`-level topic metadata yet) aggregates into `weak_topics.missed_count` (`backend/app/models/weak_topic.py`) — a running tally per `(user, notebook, topic)`, not a per-attempt snapshot (`docs/AI.md#memory--personalization`, ADR 0011).
+4. **Not yet implemented:** Progress/Analytics tables updated (streak, mastery, accuracy trend, `docs/DATABASE.md`).
+5. **Not yet implemented:** Personalized improvement plan/recommendations surfaced on the dashboard.
 
 ### 7. (Reserved) Study Plan Generation
 <!-- TODO: document once Phase 4 adaptive study planning is implemented -->

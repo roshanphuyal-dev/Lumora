@@ -9,7 +9,8 @@ Zen fallback order per ADR 0008) is exercised for real -- nothing about the rout
 logic itself is mocked or skipped.
 """
 
-from unittest.mock import AsyncMock
+import json
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from ai.gemini.client import GeminiClient, GeminiError
@@ -26,11 +27,16 @@ from ai.orchestrator.schemas import (
     AIResponse,
     Citation,
     DocumentIndexRequest,
+    GradingItem,
     NotebookQueryRequest,
     ProviderName,
+    QuestionItem,
+    QuizGenerationRequest,
+    QuizGradingRequest,
     TeachingExplanationRequest,
 )
 from ai.orchestrator.task_types import TaskType
+from pydantic import TypeAdapter
 
 
 def _document_index_request() -> DocumentIndexRequest:
@@ -215,3 +221,209 @@ async def test_teaching_explanation_wraps_errors_from_both_providers() -> None:
         )
 
     assert "no usable text" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# QUIZ_GENERATION / QUIZ_GRADING (ADR 0011) -- Gemini only, no OpenCode Zen fallback.
+# ---------------------------------------------------------------------------
+
+
+def _quiz_generation_request() -> QuizGenerationRequest:
+    return QuizGenerationRequest(
+        topic="Cell biology",
+        context="Mitochondria produce ATP.",
+        citations=[Citation(source_id="src-1", chunk_id="chunk-1")],
+        question_types=["mcq"],
+        count=5,
+        difficulty="mixed",
+    )
+
+
+def _quiz_generation_items_json() -> str:
+    return json.dumps(
+        [
+            {
+                "question_type": "mcq",
+                "prompt": "What is the powerhouse of the cell?",
+                "options": ["Nucleus", "Mitochondria"],
+                "correct_answer": "Mitochondria",
+                "difficulty": "easy",
+                "explanation": "Mitochondria produce ATP.",
+            }
+        ]
+    )
+
+
+async def test_quiz_generation_routes_to_gemini() -> None:
+    mock_client = AsyncMock(spec=GeminiClient)
+    mock_client.generate_quiz.return_value = _quiz_generation_items_json()
+
+    request = _quiz_generation_request()
+    response = await run_task(TaskType.QUIZ_GENERATION, request, gemini_client=mock_client)
+
+    mock_client.generate_quiz.assert_awaited_once_with(
+        topic=request.topic,
+        context=request.context,
+        question_types=request.question_types,
+        count=request.count,
+        difficulty=request.difficulty,
+    )
+    assert response.task_type == TaskType.QUIZ_GENERATION
+    assert response.provider == ProviderName.GEMINI
+    # The orchestrator re-serializes via `QuestionItem.model_dump()` (fills in the
+    # unset-field `None`s), so compare parsed items rather than raw JSON text.
+    items_adapter = TypeAdapter(list[QuestionItem])
+    assert items_adapter.validate_json(response.content) == items_adapter.validate_json(
+        _quiz_generation_items_json()
+    )
+    # Citations carried through end-to-end (.claude/rules/ai.md).
+    assert response.citations == request.citations
+
+
+async def test_quiz_generation_rejects_mismatched_request_type() -> None:
+    mock_client = AsyncMock(spec=GeminiClient)
+
+    with pytest.raises(OrchestrationError, match="QuizGenerationRequest"):
+        await run_task(
+            TaskType.QUIZ_GENERATION, _teaching_explanation_request(), gemini_client=mock_client
+        )
+
+    mock_client.generate_quiz.assert_not_awaited()
+
+
+async def test_quiz_generation_wraps_gemini_error() -> None:
+    mock_client = AsyncMock(spec=GeminiClient)
+    mock_client.generate_quiz.side_effect = GeminiError("quota exhausted")
+
+    with pytest.raises(OrchestrationError, match="quota exhausted"):
+        await run_task(
+            TaskType.QUIZ_GENERATION, _quiz_generation_request(), gemini_client=mock_client
+        )
+
+
+async def test_quiz_generation_wraps_invalid_json_as_orchestration_error() -> None:
+    mock_client = AsyncMock(spec=GeminiClient)
+    mock_client.generate_quiz.return_value = "not a valid question list"
+
+    with pytest.raises(OrchestrationError, match="invalid quiz"):
+        await run_task(
+            TaskType.QUIZ_GENERATION, _quiz_generation_request(), gemini_client=mock_client
+        )
+
+
+async def test_quiz_generation_never_falls_back_to_opencode_zen_on_gemini_failure() -> None:
+    """No fallback exists for QUIZ_GENERATION (ADR 0011/docs/AI.md) -- confirm
+    OpenCodeZenClient is never even instantiated on a Gemini failure, not just that the
+    final error message happens to mention Gemini."""
+    mock_client = AsyncMock(spec=GeminiClient)
+    mock_client.generate_quiz.side_effect = GeminiError("provider unavailable")
+
+    with patch(
+        "ai.orchestrator.orchestrator.OpenCodeZenClient",
+        side_effect=AssertionError(
+            "OpenCodeZenClient must never be constructed for QUIZ_GENERATION"
+        ),
+    ):
+        with pytest.raises(OrchestrationError, match="provider unavailable"):
+            await run_task(
+                TaskType.QUIZ_GENERATION, _quiz_generation_request(), gemini_client=mock_client
+            )
+
+
+def _quiz_grading_request() -> QuizGradingRequest:
+    return QuizGradingRequest(
+        items=[
+            GradingItem(
+                question_id="q-1",
+                question_type="short_answer",
+                prompt="Explain photosynthesis.",
+                reference_answer="Plants convert light into chemical energy.",
+                student_answer="Plants use sunlight to make food.",
+            )
+        ]
+    )
+
+
+def _quiz_grading_results_json() -> str:
+    return json.dumps(
+        [
+            {
+                "question_id": "q-1",
+                "score": 0.8,
+                "is_correct": True,
+                "feedback": "Good, but missing the ATP synthesis detail.",
+                "topic_tag": "photosynthesis",
+            }
+        ]
+    )
+
+
+async def test_quiz_grading_routes_to_gemini() -> None:
+    mock_client = AsyncMock(spec=GeminiClient)
+    mock_client.grade_quiz_answers.return_value = _quiz_grading_results_json()
+
+    request = _quiz_grading_request()
+    response = await run_task(TaskType.QUIZ_GRADING, request, gemini_client=mock_client)
+
+    mock_client.grade_quiz_answers.assert_awaited_once_with(
+        items=[
+            {
+                "question_id": "q-1",
+                "question_type": "short_answer",
+                "prompt": "Explain photosynthesis.",
+                "reference_answer": "Plants convert light into chemical energy.",
+                "student_answer": "Plants use sunlight to make food.",
+            }
+        ]
+    )
+    assert response.task_type == TaskType.QUIZ_GRADING
+    assert response.provider == ProviderName.GEMINI
+    assert json.loads(response.content) == json.loads(_quiz_grading_results_json())
+
+
+async def test_quiz_grading_short_circuits_on_empty_items_without_calling_gemini() -> None:
+    mock_client = AsyncMock(spec=GeminiClient)
+
+    response = await run_task(
+        TaskType.QUIZ_GRADING, QuizGradingRequest(items=[]), gemini_client=mock_client
+    )
+
+    mock_client.grade_quiz_answers.assert_not_awaited()
+    assert response.content == "[]"
+    assert response.provider == ProviderName.GEMINI
+
+
+async def test_quiz_grading_rejects_mismatched_request_type() -> None:
+    mock_client = AsyncMock(spec=GeminiClient)
+
+    with pytest.raises(OrchestrationError, match="QuizGradingRequest"):
+        await run_task(
+            TaskType.QUIZ_GRADING, _teaching_explanation_request(), gemini_client=mock_client
+        )
+
+    mock_client.grade_quiz_answers.assert_not_awaited()
+
+
+async def test_quiz_grading_wraps_gemini_error() -> None:
+    mock_client = AsyncMock(spec=GeminiClient)
+    mock_client.grade_quiz_answers.side_effect = GeminiError("quota exhausted")
+
+    with pytest.raises(OrchestrationError, match="quota exhausted"):
+        await run_task(TaskType.QUIZ_GRADING, _quiz_grading_request(), gemini_client=mock_client)
+
+
+async def test_quiz_grading_never_falls_back_to_opencode_zen_on_gemini_failure() -> None:
+    """Same no-fallback guarantee as QUIZ_GENERATION -- a bad parse would silently persist
+    a wrong grade as a student's score, so QUIZ_GRADING must fail hard, never degrade
+    (ADR 0011)."""
+    mock_client = AsyncMock(spec=GeminiClient)
+    mock_client.grade_quiz_answers.side_effect = GeminiError("provider unavailable")
+
+    with patch(
+        "ai.orchestrator.orchestrator.OpenCodeZenClient",
+        side_effect=AssertionError("OpenCodeZenClient must never be constructed for QUIZ_GRADING"),
+    ):
+        with pytest.raises(OrchestrationError, match="provider unavailable"):
+            await run_task(
+                TaskType.QUIZ_GRADING, _quiz_grading_request(), gemini_client=mock_client
+            )

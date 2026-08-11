@@ -14,7 +14,10 @@ from app.models import (  # noqa: F401 -- register models with Base.metadata
     generated_material,
     note,
     notebook,
+    quiz,
+    quiz_attempt,
     user,
+    weak_topic,
 )
 
 config = context.config

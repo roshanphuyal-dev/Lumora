@@ -19,7 +19,7 @@ from collections.abc import AsyncIterator
 
 from google import genai
 from google.genai import types
-from pydantic import BaseModel, RootModel, ValidationError
+from pydantic import BaseModel, Field, RootModel, ValidationError
 
 from ai.prompts.chat_response_v1 import (
     SYSTEM_PROMPT as CHAT_SYSTEM_PROMPT,
@@ -35,6 +35,11 @@ from ai.prompts.flashcard_generation_v1 import (
 )
 from ai.prompts.note_generation_v1 import SYSTEM_PROMPT as NOTE_SYSTEM_PROMPT
 from ai.prompts.note_generation_v1 import render_user_prompt as render_note_prompt
+from ai.prompts.quiz_generation_v1 import SYSTEM_PROMPT as QUIZ_SYSTEM_PROMPT
+from ai.prompts.quiz_generation_v1 import render_user_prompt as render_quiz_prompt
+from ai.prompts.quiz_grading_v1 import SYSTEM_PROMPT as QUIZ_GRADING_SYSTEM_PROMPT
+from ai.prompts.quiz_grading_v1 import GradingItemInput
+from ai.prompts.quiz_grading_v1 import render_user_prompt as render_quiz_grading_prompt
 from ai.prompts.structured_note_generation_v1 import (
     SYSTEM_PROMPT as STRUCTURED_NOTE_SYSTEM_PROMPT,
 )
@@ -91,6 +96,50 @@ class _ComparisonChartSchema(BaseModel):
 
 
 _ITEM_LIST_MATERIAL_TYPES = {"mnemonics", "timeline"}
+
+
+class _MatchingPairSchema(BaseModel):
+    """Mirrors `ai.orchestrator.schemas.MatchingPair` -- one correct `matching` pair."""
+
+    left: str
+    right: str
+
+
+class _QuestionItemSchema(BaseModel):
+    """Mirrors `ai.orchestrator.schemas.QuestionItem`'s shape -- one quiz question, flat
+    across all 7 question types (`ai/prompts/quiz_generation_v1.py`), duplicated here for
+    the same reason as `_FlashcardItemSchema` (no importing `ai.orchestrator.schemas`)."""
+
+    question_type: str
+    prompt: str
+    scenario: str | None = None
+    options: list[str] | None = None
+    pairs: list[_MatchingPairSchema] | None = None
+    blanks: list[str] | None = None
+    correct_answer: str | None = None
+    reference_answer: str | None = None
+    difficulty: str = "medium"
+    explanation: str | None = None
+    citation: _FlashcardCitationSchema | None = None
+
+
+class _QuestionListSchema(RootModel[list[_QuestionItemSchema]]):
+    pass
+
+
+class _QuestionGradeResultSchema(BaseModel):
+    """Mirrors `ai.orchestrator.schemas.QuestionGradeResult`'s shape, duplicated here for
+    the same reason as `_QuestionItemSchema` (no importing `ai.orchestrator.schemas`)."""
+
+    question_id: str
+    score: float = Field(ge=0.0, le=1.0)
+    is_correct: bool
+    feedback: str
+    topic_tag: str
+
+
+class _GradeResultListSchema(RootModel[list[_QuestionGradeResultSchema]]):
+    pass
 
 
 class GeminiError(RuntimeError):
@@ -210,6 +259,82 @@ class GeminiClient:
             raise GeminiError(f"Gemini returned invalid {material_type} content: {exc}") from exc
         except Exception as exc:  # noqa: BLE001 - normalize provider failures
             raise GeminiError(f"Gemini {material_type} generation failed: {exc}") from exc
+
+    async def generate_quiz(
+        self,
+        *,
+        topic: str,
+        context: str,
+        question_types: list[str],
+        count: int,
+        difficulty: str,
+    ) -> str:
+        """Generate a JSON array of quiz question objects via structured output.
+
+        Returns the raw, schema-validated JSON text rather than parsed `QuestionItem`
+        objects, same reasoning as `generate_flashcards` (this client must not import
+        `ai.orchestrator.schemas`) -- the orchestrator parses/validates this JSON into its
+        own `QuestionItem` type.
+        """
+        user_prompt = render_quiz_prompt(
+            topic=topic,
+            context=context,
+            question_types=question_types,
+            count=count,
+            difficulty=difficulty,
+        )
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=_MODEL_NAME,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=QUIZ_SYSTEM_PROMPT,
+                    response_mime_type="application/json",
+                    response_schema=_QuestionListSchema,
+                ),
+            )
+            if not response.text:
+                raise GeminiError("Gemini returned an empty quiz.")
+            _QuestionListSchema.model_validate_json(response.text)
+            return response.text
+        except GeminiError:
+            raise
+        except (ValidationError, ValueError) as exc:
+            raise GeminiError(f"Gemini returned an invalid quiz: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001 - normalize provider failures
+            raise GeminiError(f"Gemini quiz generation failed: {exc}") from exc
+
+    async def grade_quiz_answers(self, *, items: list[GradingItemInput]) -> str:
+        """Grade a batch of free-text quiz answers via structured output, one call covering
+        every short_answer/long_answer/case_study question in a single attempt (never one
+        call per question, `.claude/rules/performance.md`).
+
+        Returns the raw, schema-validated JSON text rather than parsed
+        `QuestionGradeResult` objects, same reasoning as `generate_quiz` (this client must
+        not import `ai.orchestrator.schemas`) -- the orchestrator parses/validates this
+        JSON into its own `QuestionGradeResult` type.
+        """
+        user_prompt = render_quiz_grading_prompt(items=items)
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=_MODEL_NAME,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=QUIZ_GRADING_SYSTEM_PROMPT,
+                    response_mime_type="application/json",
+                    response_schema=_GradeResultListSchema,
+                ),
+            )
+            if not response.text:
+                raise GeminiError("Gemini returned an empty grading result.")
+            _GradeResultListSchema.model_validate_json(response.text)
+            return response.text
+        except GeminiError:
+            raise
+        except (ValidationError, ValueError) as exc:
+            raise GeminiError(f"Gemini returned an invalid grading result: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001 - normalize provider failures
+            raise GeminiError(f"Gemini quiz grading failed: {exc}") from exc
 
     async def stream_chat_response(
         self, *, question: str, context: str = "", history: str = ""

@@ -148,6 +148,148 @@ class StructuredNoteGenerationRequest(BaseModel):
     citations: list[Citation] = Field(default_factory=list)
 
 
+QUESTION_TYPES = (
+    "mcq",
+    "true_false",
+    "fill_blank",
+    "matching",
+    "short_answer",
+    "long_answer",
+    "case_study",
+)
+"""The 7 supported quiz question shapes (`docs/AI_WORKFLOWS.md#3`).
+
+Kept as a plain tuple of `str`, not an enum, for the same reason as
+`NotesGenerationRequest.material_type` -- `ai/` doesn't import backend model enums, and a
+future `app.models.question.QuestionType` (Milestone 1, DB schema) validates independently
+at the API layer.
+"""
+
+_OBJECTIVE_QUESTION_TYPES = {"mcq", "true_false", "fill_blank", "matching"}
+"""Question types answered via `QuestionItem.correct_answer` (single verifiable answer)."""
+
+_FREE_TEXT_QUESTION_TYPES = {"short_answer", "long_answer", "case_study"}
+"""Question types answered via `QuestionItem.reference_answer` (open-ended, graded against
+a model answer rather than exact-matched -- Milestone 6, `QUIZ_GRADING`)."""
+
+
+class MatchingPair(BaseModel):
+    """One correct left/right correspondence for a `matching` question.
+
+    A `matching` `QuestionItem.pairs` list holds every correct pair in order; a UI is
+    expected to shuffle the `right` side before presenting it to the student.
+    """
+
+    left: str
+    right: str
+
+
+class QuestionItem(BaseModel):
+    """One generated quiz question — the structured-output contract Gemini must satisfy.
+
+    A single flat shape covers all 7 `QUESTION_TYPES`, discriminated by `question_type`;
+    only the fields relevant to that type are populated, the rest stay `None` (same
+    flat-optional-fields approach as `ai/gemini/client.py`'s structured-note item schema).
+
+    - `mcq`: `options` (answer choices) + `correct_answer` (must equal one option's text).
+    - `true_false`: `correct_answer` is `"true"` or `"false"`.
+    - `fill_blank`: `prompt` contains blank markers (e.g. `"_____"`); `blanks` holds the
+      correct answer for each blank in order; `correct_answer` mirrors that as one
+      " | "-joined string for display/logging convenience.
+    - `matching`: `pairs` holds every correct left/right correspondence; `correct_answer`
+      mirrors it as one "left=right, ..." joined string for the same convenience reason.
+    - `short_answer` / `long_answer`: `reference_answer` is the expected/model answer,
+      graded against a rubric rather than exact-matched (Milestone 6).
+    - `case_study`: `scenario` is the case description the student reads first; `prompt`
+      is the question posed about it; `reference_answer` is the expected/model answer.
+    """
+
+    question_type: str
+    prompt: str
+    scenario: str | None = None
+    options: list[str] | None = None
+    pairs: list[MatchingPair] | None = None
+    blanks: list[str] | None = None
+    correct_answer: str | None = None
+    reference_answer: str | None = None
+    difficulty: str = "medium"
+    explanation: str | None = None
+    citation: Citation | None = None
+
+
+class QuizGenerationRequest(BaseModel):
+    """Input for `TaskType.QUIZ_GENERATION` — grounded NotebookLM content to turn into a
+    quiz question set.
+
+    `question_types` is a subset of `QUESTION_TYPES` (plain `list[str]`, same
+    backend-enum-decoupling reason as `material_type` elsewhere in this module).
+    `difficulty` is `"easy"`/`"medium"`/`"hard"`/`"mixed"` — `"mixed"` lets Gemini
+    distribute difficulty across the generated set itself, tagging each `QuestionItem`
+    individually.
+    """
+
+    topic: str = ""
+    context: str = ""
+    citations: list[Citation] = Field(default_factory=list)
+    question_types: list[str] = Field(default_factory=lambda: ["mcq"])
+    count: int = 10
+    difficulty: str = "mixed"
+
+
+class GradingItem(BaseModel):
+    """One free-text question to grade, part of a batched `QuizGradingRequest`.
+
+    `question_type` is one of `_FREE_TEXT_QUESTION_TYPES` ("short_answer"/"long_answer"/
+    "case_study") -- kept as a plain `str`, same backend-enum-decoupling reason as
+    `QuestionItem.question_type`. `question_id` is opaque to this module (the caller's
+    `app.models.quiz.Question.id`), threaded through unchanged so the grading result can be
+    matched back to the right question -- `ai/` never imports backend models.
+    """
+
+    question_id: str
+    question_type: str
+    prompt: str
+    reference_answer: str
+    student_answer: str
+
+
+class QuizGradingRequest(BaseModel):
+    """Input for `TaskType.QUIZ_GRADING` -- every free-text question in one quiz attempt,
+    graded in a single batched Gemini call (`.claude/rules/performance.md`'s no-AI-call-
+    in-a-loop rule, ADR 0011). Callers assemble `items` from all of an attempt's
+    short_answer/long_answer/case_study questions plus the student's submitted answers;
+    objective-type questions never appear here (Milestone 7 grades those deterministically,
+    no AI call).
+    """
+
+    items: list[GradingItem]
+
+
+class QuestionGradeResult(BaseModel):
+    """One graded free-text question -- the structured-output contract Gemini must satisfy.
+
+    `score` is a 0.0-1.0 fractional value (partial credit for long-form answers) -- the same
+    scale convention Milestone 7's deterministic grading is expected to use for objective
+    types (1.0 = fully correct, 0.0 = fully incorrect, no partial credit there), so a
+    caller can average both uniformly into an attempt-level score. `is_correct` is set
+    directly by the grading call rather than derived client-side from a hardcoded
+    threshold; the prompt instructs it to align with `score >= 0.5` ("more right than
+    wrong") but is a holistic judgment call for borderline partial-credit answers, not a
+    strict cutoff -- documented here so Milestone 7 doesn't need to re-derive it. `feedback`
+    is constructive, specific text shown to the student. `topic_tag` is the specific
+    sub-topic this question tests (e.g. "photosynthesis", "Newton's second law"), used to
+    aggregate `weak_topics.missed_count` for low-scoring questions (ADR 0011) -- always
+    populated, even for a fully-correct answer, so aggregation logic doesn't need a
+    separate "was this missed" branch.
+    """
+
+    question_id: str
+    score: float = Field(ge=0.0, le=1.0)
+    is_correct: bool
+    feedback: str
+    topic_tag: str
+
+
 class StudioArtifactCreateRequest(BaseModel):
     """Input for `TaskType.STUDIO_ARTIFACT_CREATE`.
 

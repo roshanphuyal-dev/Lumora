@@ -13,6 +13,7 @@ import { AskNotebookSection } from "@/components/notebook/AskNotebookSection"
 import { ResourceDialog } from "@/components/notebook/ResourceDialog"
 import { NotesSection } from "@/components/notebook/NotesSection"
 import { FlashcardsSection } from "@/components/notebook/FlashcardsSection"
+import { QuizzesSection } from "@/components/notebook/QuizzesSection"
 import { StudioSection } from "@/components/notebook/StudioSection"
 import type { IndexingStatus } from "@/lib/notebooks"
 
@@ -68,6 +69,7 @@ export function NotebookDetailPage() {
               <TabsTrigger value="ask">Ask</TabsTrigger>
               <TabsTrigger value="notes">Notes</TabsTrigger>
               <TabsTrigger value="flashcards">Flashcards</TabsTrigger>
+              <TabsTrigger value="quizzes">Quizzes</TabsTrigger>
               <TabsTrigger value="studio">Studio</TabsTrigger>
             </TabsList>
 
@@ -138,6 +140,10 @@ export function NotebookDetailPage() {
 
             <TabsContent value="flashcards" className="pt-3">
               <FlashcardsSection notebookId={notebookId} />
+            </TabsContent>
+
+            <TabsContent value="quizzes" className="pt-3">
+              <QuizzesSection notebookId={notebookId} />
             </TabsContent>
 
             <TabsContent value="studio" className="pt-3">

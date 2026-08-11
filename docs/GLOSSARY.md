@@ -25,6 +25,7 @@ Canonical definitions for domain terms used across `docs/` and the codebase. Thi
 - **Orchestration Layer** — the backend component (`ai/orchestrator/`) that decides which AI provider handles a given request; see `docs/AI.md`.
 - **Task Type** — the enum the Orchestration Layer uses to decide routing (`ai/orchestrator/task_types.py`, e.g. `document_index`, `notebook_query`, `teaching_explanation`) — declared by feature code, never a hardcoded provider choice.
 - **Weak Topic** — a topic the student has demonstrated low mastery on, derived from quiz performance and tracked for adaptive tutoring (`docs/AI.md#memory--personalization`).
+- **Quiz** vs **Question** vs **Attempt** — a Quiz is the generated definition (its topic, requested question types/count/difficulty, time limit); a Question is one item belonging to a Quiz (prompt, type, correct/reference answer); an Attempt is one student's run through a Quiz (a `quiz_attempts` row) — a single Quiz can have many Attempts (repeat/concurrent attempts are allowed), and an Attempt's per-question results live in `quiz_attempt_answers`, not on the Question itself, since the same Question is shared across every Attempt of its Quiz (`docs/DATABASE.md#core-tables`).
 - **Grounding** — the property of an AI response being traceable to specific Source/Chunk citations, as opposed to unattributed generic model knowledge.
 
 <!-- Add a term here the first time it's used ambiguously across two or more docs. -->

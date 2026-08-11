@@ -18,7 +18,10 @@ from app.models import (  # noqa: F401 -- register all models with Base.metadata
     generated_material,
     note,
     notebook,
+    quiz,
+    quiz_attempt,
     user,
+    weak_topic,
 )
 
 settings = get_settings()

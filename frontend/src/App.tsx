@@ -7,6 +7,7 @@ import { LoginPage } from "@/pages/LoginPage"
 import { RegisterPage } from "@/pages/RegisterPage"
 import { NotebooksListPage } from "@/pages/NotebooksListPage"
 import { NotebookDetailPage } from "@/pages/NotebookDetailPage"
+import { QuizAttemptPage } from "@/pages/QuizAttemptPage"
 import { SettingsPage } from "@/pages/SettingsPage"
 import { AuthProvider } from "@/hooks/use-auth"
 import { ThemeProvider } from "@/hooks/use-theme"
@@ -50,6 +51,10 @@ function App() {
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/notebooks" element={<NotebooksListPage />} />
                 <Route path="/notebooks/:id" element={<NotebookDetailPage />} />
+                <Route
+                  path="/notebooks/:notebookId/quizzes/:quizId/attempts/:attemptId"
+                  element={<QuizAttemptPage />}
+                />
                 <Route path="/settings" element={<SettingsPage />} />
               </Route>
             </Routes>

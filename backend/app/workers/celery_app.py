@@ -19,7 +19,10 @@ from app.models import (  # noqa: F401
     generated_material,
     note,
     notebook,
+    quiz,
+    quiz_attempt,
     user,
+    weak_topic,
 )
 
 settings = get_settings()
@@ -34,6 +37,8 @@ celery_app = Celery(
         "app.workers.note_tasks",
         "app.workers.flashcard_tasks",
         "app.workers.studio_tasks",
+        "app.workers.quiz_tasks",
+        "app.workers.quiz_grading_tasks",
     ],
 )
 

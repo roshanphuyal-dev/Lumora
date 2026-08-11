@@ -48,3 +48,22 @@ class TaskType(enum.StrEnum):
     # app/workers/notebook_tasks.py -- bookkeeping/retrieval on an already-triggered job,
     # not a new "AI does something" call.
     STUDIO_ARTIFACT_CREATE = "studio_artifact_create"
+
+    # Quiz question set generation, grounded in NotebookLM retrieval -> Gemini structures
+    # the retrieved content into a JSON list of question objects across the 7 supported
+    # question types (mcq/true_false/fill_blank/matching/short_answer/long_answer/
+    # case_study) (Routing Logic step 1 + 2, docs/AI.md). Structured output only, same
+    # no-fallback precedent as STRUCTURED_NOTE_GENERATION -- best-effort free-text-parsing
+    # 7 different question shapes isn't worth the fragility. Grading (`QUIZ_GRADING`) is a
+    # separate, later task type -- not implemented here.
+    QUIZ_GENERATION = "quiz_generation"
+
+    # Free-text quiz answer grading -> Gemini structured output, one batched call per quiz
+    # attempt covering every short_answer/long_answer/case_study question in it (never one
+    # call per question -- .claude/rules/performance.md's no-AI-call-in-a-loop rule).
+    # Objective types (mcq/true_false/fill_blank/matching) are graded deterministically in
+    # plain Python with no AI call at all (Milestone 7, backend layer) and never reach this
+    # task type. No fallback, same precedent as QUIZ_GENERATION/STRUCTURED_NOTE_GENERATION --
+    # batched multi-question structured grading output is too fragile to best-effort-parse
+    # as free text (ADR 0011).
+    QUIZ_GRADING = "quiz_grading"

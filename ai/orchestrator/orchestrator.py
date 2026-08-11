@@ -41,6 +41,10 @@ from ai.orchestrator.schemas import (
     NotebookQueryRequest,
     NotesGenerationRequest,
     ProviderName,
+    QuestionGradeResult,
+    QuestionItem,
+    QuizGenerationRequest,
+    QuizGradingRequest,
     StructuredNoteGenerationRequest,
     StudioArtifactCreateRequest,
     TeachingExplanationRequest,
@@ -56,6 +60,8 @@ TaskRequest = (
     | FlashcardGenerationRequest
     | StructuredNoteGenerationRequest
     | StudioArtifactCreateRequest
+    | QuizGenerationRequest
+    | QuizGradingRequest
 )
 
 
@@ -115,6 +121,16 @@ async def run_task(
                 "STUDIO_ARTIFACT_CREATE requires a StudioArtifactCreateRequest."
             )
         return await _run_studio_artifact_create(request, notebooklm_client)
+
+    if task_type is TaskType.QUIZ_GENERATION:
+        if not isinstance(request, QuizGenerationRequest):
+            raise OrchestrationError("QUIZ_GENERATION requires a QuizGenerationRequest.")
+        return await _run_quiz_generation(request, gemini_client)
+
+    if task_type is TaskType.QUIZ_GRADING:
+        if not isinstance(request, QuizGradingRequest):
+            raise OrchestrationError("QUIZ_GRADING requires a QuizGradingRequest.")
+        return await _run_quiz_grading(request, gemini_client)
 
     raise OrchestrationError(f"No routing rule for task_type={task_type!r}.")
 
@@ -378,6 +394,87 @@ async def _run_flashcard_generation(
         provider=provider,
         content=json.dumps([item.model_dump() for item in items]),
         citations=request.citations,
+        metadata={},
+    )
+
+
+async def _run_quiz_generation(
+    request: QuizGenerationRequest, gemini_client: GeminiClient | None
+) -> AIResponse:
+    """Gemini only, no fallback -- same reasoning as `_run_structured_note_generation`.
+
+    OpenCode Zen has no structured-output API, and best-effort-parsing free text into 7
+    different question shapes (mcq/true_false/fill_blank/matching/short_answer/
+    long_answer/case_study) for a rare failure path isn't worth the fragility -- a clean
+    failure (retry the generation) beats a garbled quiz a UI would try to render.
+    """
+    try:
+        raw_json = await (gemini_client or GeminiClient()).generate_quiz(
+            topic=request.topic,
+            context=request.context,
+            question_types=request.question_types,
+            count=request.count,
+            difficulty=request.difficulty,
+        )
+        items = TypeAdapter(list[QuestionItem]).validate_json(raw_json)
+    except GeminiError as exc:
+        raise OrchestrationError(f"QUIZ_GENERATION failed: {exc}") from exc
+    except ValidationError as exc:
+        raise OrchestrationError(f"QUIZ_GENERATION returned an invalid quiz: {exc}") from exc
+
+    return AIResponse(
+        task_type=TaskType.QUIZ_GENERATION,
+        provider=ProviderName.GEMINI,
+        content=json.dumps([item.model_dump() for item in items]),
+        citations=request.citations,
+        metadata={},
+    )
+
+
+async def _run_quiz_grading(
+    request: QuizGradingRequest, gemini_client: GeminiClient | None
+) -> AIResponse:
+    """Gemini only, no fallback (ADR 0011) -- same reasoning as `_run_quiz_generation`.
+
+    OpenCode Zen has no structured-output API, and best-effort-parsing free text into a
+    batched list of per-question grades (score/is_correct/feedback/topic_tag, matched back
+    by `question_id`) for a rare failure path isn't worth the fragility -- a clean failure
+    (retry the grading call) beats silently-wrong scores a caller would persist as a
+    student's grade.
+    """
+    if not request.items:
+        return AIResponse(
+            task_type=TaskType.QUIZ_GRADING,
+            provider=ProviderName.GEMINI,
+            content="[]",
+            citations=[],
+            metadata={},
+        )
+
+    try:
+        raw_json = await (gemini_client or GeminiClient()).grade_quiz_answers(
+            items=[
+                {
+                    "question_id": item.question_id,
+                    "question_type": item.question_type,
+                    "prompt": item.prompt,
+                    "reference_answer": item.reference_answer,
+                    "student_answer": item.student_answer,
+                }
+                for item in request.items
+            ]
+        )
+        results = TypeAdapter(list[QuestionGradeResult]).validate_json(raw_json)
+    except GeminiError as exc:
+        raise OrchestrationError(f"QUIZ_GRADING failed: {exc}") from exc
+    except ValidationError as exc:
+        raise OrchestrationError(f"QUIZ_GRADING returned an invalid result: {exc}") from exc
+
+    return AIResponse(
+        task_type=TaskType.QUIZ_GRADING,
+        provider=ProviderName.GEMINI,
+        content=json.dumps([result.model_dump() for result in results]),
+        citations=[],
         metadata={},
     )
 

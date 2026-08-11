@@ -36,12 +36,14 @@ Verified end-to-end against a running backend + real providers (no stubs remaini
 
 Verified end-to-end against a running backend + real providers (Postgres, Redis/Celery, live Gemini calls, live NotebookLM Studio generation) — see the Definition of Done note below.
 
-### Phase 3 — Assessment (Status: Not Started)
-- Quiz generation (all question types)
-- Quiz engine (timer, navigation, autosave, review)
-- AI evaluation (scoring, feedback, weak-topic tagging)
-- Internet search integration (Tavily/Brave)
-- Image retrieval (Wikimedia/Openverse/Unsplash) — architecture pre-specified in [ADR 0010](adr/0010-topic-image-retrieval.md)
+### Phase 3 — Assessment (Status: In Progress)
+- Quiz generation — done, 7 of 8 DB-supported question types actually generatable (`assertion_reason` has schema/grading/UI support but is excluded from generation, so unreachable — see `docs/FEATURES.md`'s Quiz Generator section for the precise breakdown); grounded via NotebookLM retrieval + Gemini structured output (`TaskType.QUIZ_GENERATION`, `docs/AI.md#routing-logic`)
+- Quiz engine (timer, navigation, autosave, review) — done (`QuizTakingView`/`QuizReviewView`, `docs/FEATURES.md`); adaptive question *selection* is not part of this — only difficulty *tagging* at generation time exists, deferred to Phase 4 below
+- AI evaluation (scoring, feedback, weak-topic tagging) — done for objective (deterministic) and free-text (AI-graded, [ADR 0011](adr/0011-quiz-evaluation-scoring-design.md)) scoring/feedback; weak-topic tagging is **partial** — it only fires for free-text/AI-graded answers, since `Question` has no topic column for objective types (`docs/FEATURES.md`'s AI Evaluation section)
+- Internet search integration (Tavily/Brave) — not started
+- Image retrieval (Wikimedia/Openverse/Unsplash) — not started; architecture pre-specified in [ADR 0010](adr/0010-topic-image-retrieval.md)
+
+Not Done per this doc's own Definition of Done below: the two not-started sub-items above remain, and the quiz-taking UI has never been manually verified in a running browser (no connected Chrome extension during the milestones that built it) — shipped features are otherwise tested (189 passing backend/service tests) and their docs are current, but frontend test coverage for the quiz UI specifically is zero (Vitest/RTL infra itself deferred, `docs/TESTING.md`).
 
 ### Phase 4 — Personalization (Status: Not Started)
 - Full RAG pipeline across notebooks

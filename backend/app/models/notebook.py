@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from app.models.flashcard import FlashcardSet
     from app.models.generated_material import GeneratedMaterial
     from app.models.note import Note
+    from app.models.quiz import Quiz
+    from app.models.weak_topic import WeakTopic
 
 
 class NotebookSourceIndexStatus(enum.StrEnum):
@@ -61,6 +63,12 @@ class Notebook(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="notebook", cascade="all, delete-orphan"
     )
     generated_materials: Mapped[list["GeneratedMaterial"]] = relationship(
+        back_populates="notebook", cascade="all, delete-orphan"
+    )
+    quizzes: Mapped[list["Quiz"]] = relationship(
+        back_populates="notebook", cascade="all, delete-orphan"
+    )
+    weak_topics: Mapped[list["WeakTopic"]] = relationship(
         back_populates="notebook", cascade="all, delete-orphan"
     )
 
