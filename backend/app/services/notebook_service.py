@@ -15,6 +15,7 @@ from ai.orchestrator.schemas import (
     Citation,
     InternetSearchRequest,
     NotebookQueryRequest,
+    PaperSearchRequest,
     TeachingExplanationRequest,
     TopicImageResult,
     TopicImageSearchRequest,
@@ -173,6 +174,29 @@ async def search_web(
     return response.content, response.provider.value, response.citations
 
 
+async def search_papers(
+    db: AsyncSession, owner_id: uuid.UUID, notebook_id: uuid.UUID, query: str
+) -> tuple[str, str, list[Citation]]:
+    """Ask a research question via `TaskType.PAPER_SEARCH` (arXiv primary, Semantic
+    Scholar fallback + Gemini synthesis, ADR 0013).
+
+    404s for a notebook the caller doesn't own, same ownership check as `ask_question`.
+    Same shape/reasoning as `search_web` -- never consults the notebook's own indexed
+    sources, since this is for academic literature outside what the notebook already knows.
+    """
+    await get_owned_notebook(db, owner_id, notebook_id)
+
+    try:
+        response = await run_task(TaskType.PAPER_SEARCH, PaperSearchRequest(query=query))
+    except OrchestrationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Couldn't search for papers right now: {exc}",
+        ) from exc
+
+    return response.content, response.provider.value, response.citations
+
+
 async def search_topic_image(
     db: AsyncSession, owner_id: uuid.UUID, notebook_id: uuid.UUID, query: str
 ) -> TopicImageResult | None:
@@ -292,9 +316,12 @@ async def get_notebook(db: AsyncSession, notebook_id: uuid.UUID) -> Notebook:
     return notebook
 
 
-async def mark_source_indexed(db: AsyncSession, source_id: uuid.UUID) -> NotebookSource:
+async def mark_source_indexed(
+    db: AsyncSession, source_id: uuid.UUID, notebooklm_source_id: str | None = None
+) -> NotebookSource:
     source = await get_source(db, source_id)
     source.indexing_status = NotebookSourceIndexStatus.INDEXED
+    source.notebooklm_source_id = notebooklm_source_id
     await db.commit()
     await db.refresh(source)
     return source

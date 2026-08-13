@@ -11,6 +11,8 @@ from app.schemas.notebook import (
     NotebookDetail,
     NotebookImageSearchRequest,
     NotebookImageSearchResponse,
+    NotebookPaperSearchRequest,
+    NotebookPaperSearchResponse,
     NotebookRead,
     NotebookSearchRequest,
     NotebookSearchResponse,
@@ -138,6 +140,23 @@ async def search_notebook_web(
         db, current_user.id, notebook_id, payload.query
     )
     return NotebookSearchResponse(content=content, provider=provider, citations=citations)
+
+
+@router.post("/{notebook_id}/paper-search", response_model=NotebookPaperSearchResponse)
+async def search_notebook_papers(
+    notebook_id: uuid.UUID,
+    payload: NotebookPaperSearchRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> NotebookPaperSearchResponse:
+    """Search academic literature for the notebook's topic (`TaskType.PAPER_SEARCH`,
+    arXiv primary, Semantic Scholar fallback + Gemini synthesis, ADR 0013). 404s for a
+    notebook the caller doesn't own.
+    """
+    content, provider, citations = await notebook_service.search_papers(
+        db, current_user.id, notebook_id, payload.query
+    )
+    return NotebookPaperSearchResponse(content=content, provider=provider, citations=citations)
 
 
 @router.post("/{notebook_id}/image-search", response_model=NotebookImageSearchResponse)

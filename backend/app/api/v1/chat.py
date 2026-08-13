@@ -85,6 +85,23 @@ async def search_web(
     )
 
 
+@router.post("/{conversation_id}/paper-search", response_model=WebSearchMessagePair)
+async def search_papers(
+    notebook_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    payload: WebSearchCreate,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> WebSearchMessagePair:
+    user_message, assistant_message = await chat_service.search_papers(
+        db, current_user.id, notebook_id, conversation_id, payload.query
+    )
+    return WebSearchMessagePair(
+        user_message=MessageRead.model_validate(user_message),
+        assistant_message=MessageRead.model_validate(assistant_message),
+    )
+
+
 @router.put(
     "/{conversation_id}/messages/{message_id}/image",
     response_model=MessageRead,

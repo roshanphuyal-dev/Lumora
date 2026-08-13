@@ -29,6 +29,7 @@ class NotebookSourceRead(BaseModel):
     id: uuid.UUID
     document_id: uuid.UUID
     indexing_status: NotebookSourceIndexStatus
+    notebooklm_source_id: str | None = None
     created_at: datetime
 
 
@@ -63,6 +64,21 @@ class NotebookSearchResponse(BaseModel):
     """Mirrors `NotebookAskResponse`'s shape -- `content` is Gemini's synthesized answer,
     `citations` always derived from the search results themselves
     (`ai/orchestrator/orchestrator.py:_run_internet_search`).
+    """
+
+    content: str
+    provider: str
+    citations: list[Citation] = Field(default_factory=list)
+
+
+class NotebookPaperSearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=2000)
+
+
+class NotebookPaperSearchResponse(BaseModel):
+    """Mirrors `NotebookSearchResponse`'s shape (ADR 0013) -- `content` is Gemini's
+    synthesized answer, `citations` always derived from the paper results themselves
+    (`ai/orchestrator/orchestrator.py:_run_paper_search`).
     """
 
     content: str

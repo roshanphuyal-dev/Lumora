@@ -407,6 +407,72 @@ async def test_conversation_web_search_persists_pair_in_message_history(
     assert history.json()[1]["citations"] == payload["assistant_message"]["citations"]
 
 
+async def test_conversation_paper_search_persists_pair_in_message_history(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    unique_email: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    token = await _register_and_login(client, unique_email)
+    owner = await _user(db_session, unique_email)
+    notebook = await _notebook(db_session, owner)
+    conversation = await _conversation(db_session, owner, notebook)
+    search_papers = AsyncMock(
+        return_value=(
+            "Attention Is All You Need introduced the Transformer architecture.",
+            "gemini",
+            [Citation(source_id="https://arxiv.org/abs/1706.03762", excerpt="Transformer")],
+        )
+    )
+    monkeypatch.setattr(chat_service.notebook_service, "search_papers", search_papers)
+    base_url = f"/api/v1/notebooks/{notebook.id}/conversations/{conversation.id}"
+
+    response = await client.post(
+        f"{base_url}/paper-search",
+        json={"query": "What paper introduced the Transformer?"},
+        headers=_auth(token),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["user_message"]["kind"] == "paper_search"
+    assert payload["assistant_message"]["kind"] == "paper_search"
+    assert payload["assistant_message"]["citations"][0]["source_id"] == (
+        "https://arxiv.org/abs/1706.03762"
+    )
+
+    history = await client.get(f"{base_url}/messages", headers=_auth(token))
+    assert history.status_code == 200
+    assert [(item["role"], item["kind"]) for item in history.json()] == [
+        ("user", "paper_search"),
+        ("assistant", "paper_search"),
+    ]
+    assert history.json()[1]["citations"] == payload["assistant_message"]["citations"]
+
+
+async def test_conversation_paper_search_requires_auth_and_ownership(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner_token = await _register_and_login(client, "paper-search-owner@example.com")
+    other_token = await _register_and_login(client, "paper-search-other@example.com")
+    owner = await _user(db_session, "paper-search-owner@example.com")
+    notebook = await _notebook(db_session, owner)
+    conversation = await _conversation(db_session, owner, notebook)
+    search_papers = AsyncMock(return_value=("content", "gemini", []))
+    monkeypatch.setattr(chat_service.notebook_service, "search_papers", search_papers)
+    url = f"/api/v1/notebooks/{notebook.id}/conversations/{conversation.id}/paper-search"
+
+    assert (await client.post(url, json={"query": "q"})).status_code in {401, 403}
+    assert (
+        await client.post(url, json={"query": "q"}, headers=_auth(other_token))
+    ).status_code == 404
+    owner_response = await client.post(url, json={"query": "q"}, headers=_auth(owner_token))
+    assert owner_response.status_code == 200
+    search_papers.assert_awaited_once()
+
+
 async def test_attach_message_image_persists_result_in_message_history(
     client: AsyncClient,
     db_session: AsyncSession,

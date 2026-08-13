@@ -587,6 +587,96 @@ async def test_search_returns_502_when_orchestrator_fails(
     assert "every provider failed" in resp.json()["detail"]
 
 
+async def test_paper_search_returns_content_and_provider(
+    client: AsyncClient, unique_email: str
+) -> None:
+    token = await _register_and_login(client, unique_email)
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "Machine Learning"}, headers=_auth(token)
+    )
+    notebook_id = notebook.json()["id"]
+
+    fake_response = AIResponse(
+        task_type=TaskType.PAPER_SEARCH,
+        provider=ProviderName.GEMINI,
+        content="Recent work on attention mechanisms shows...",
+        citations=[
+            Citation(source_id="https://arxiv.org/abs/1706.03762", excerpt="Attention is...")
+        ],
+        metadata={"search_provider": "arxiv"},
+    )
+    with patch(
+        "app.services.notebook_service.run_task", return_value=fake_response
+    ) as mock_run_task:
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/paper-search",
+            json={"query": "attention mechanisms in transformers"},
+            headers=_auth(token),
+        )
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "content": "Recent work on attention mechanisms shows...",
+        "provider": "gemini",
+        "citations": [
+            {
+                "source_id": "https://arxiv.org/abs/1706.03762",
+                "chunk_id": None,
+                "excerpt": "Attention is...",
+            }
+        ],
+    }
+    mock_run_task.assert_awaited_once()
+    call = mock_run_task.await_args_list[0]
+    assert call.args[0] == TaskType.PAPER_SEARCH
+    assert call.args[1].query == "attention mechanisms in transformers"
+
+
+async def test_paper_search_404s_for_notebook_the_caller_does_not_own(
+    client: AsyncClient, unique_email: str
+) -> None:
+    token_a = await _register_and_login(client, unique_email)
+    token_b = await _register_and_login(client, "paper-search-intruder@example.com")
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "Physics"}, headers=_auth(token_a)
+    )
+    notebook_id = notebook.json()["id"]
+
+    with patch("app.services.notebook_service.run_task") as mock_run_task:
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/paper-search",
+            json={"query": "recent physics papers"},
+            headers=_auth(token_b),
+        )
+
+    assert resp.status_code == 404
+    mock_run_task.assert_not_awaited()
+
+
+async def test_paper_search_returns_502_when_orchestrator_fails(
+    client: AsyncClient, unique_email: str
+) -> None:
+    token = await _register_and_login(client, unique_email)
+
+    notebook = await client.post("/api/v1/notebooks", json={"name": "Math"}, headers=_auth(token))
+    notebook_id = notebook.json()["id"]
+
+    with patch(
+        "app.services.notebook_service.run_task",
+        side_effect=OrchestrationError("every provider failed"),
+    ):
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/paper-search",
+            json={"query": "recent math papers"},
+            headers=_auth(token),
+        )
+
+    assert resp.status_code == 502
+    assert "every provider failed" in resp.json()["detail"]
+
+
 async def test_image_search_returns_found_result(client: AsyncClient, unique_email: str) -> None:
     token = await _register_and_login(client, unique_email)
 

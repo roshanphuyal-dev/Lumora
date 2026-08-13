@@ -120,6 +120,47 @@ async def search_web(
     return user_message, assistant_message
 
 
+async def search_papers(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    notebook_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    query: str,
+) -> tuple[Message, Message]:
+    conversation = await get_owned_conversation(db, user_id, notebook_id, conversation_id)
+    user_message = Message(
+        conversation_id=conversation_id,
+        role=MessageRole.USER,
+        kind=MessageKind.PAPER_SEARCH,
+        content=query,
+        citations=[],
+    )
+    db.add(user_message)
+    if conversation.title is None:
+        conversation.title = query[:255]
+    # Match streamed chat: the user's turn is durable before the external provider call.
+    # The separate commit also gives the pair deterministic chronological ordering.
+    await db.commit()
+    await db.refresh(user_message)
+
+    content, provider, citations = await notebook_service.search_papers(
+        db, user_id, notebook_id, query
+    )
+    assistant_message = Message(
+        conversation_id=conversation_id,
+        role=MessageRole.ASSISTANT,
+        kind=MessageKind.PAPER_SEARCH,
+        content=content,
+        provider=provider,
+        citations=[citation.model_dump() for citation in citations],
+        created_at=user_message.created_at + timedelta(microseconds=1),
+    )
+    db.add(assistant_message)
+    await db.commit()
+    await db.refresh(assistant_message)
+    return user_message, assistant_message
+
+
 async def attach_message_image(
     db: AsyncSession,
     user_id: uuid.UUID,

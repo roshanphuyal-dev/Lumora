@@ -22,6 +22,7 @@ class MessageRole(enum.StrEnum):
 class MessageKind(enum.StrEnum):
     NOTEBOOK = "notebook"
     WEB_SEARCH = "web_search"
+    PAPER_SEARCH = "paper_search"
 
 
 class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
