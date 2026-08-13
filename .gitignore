@@ -25,3 +25,6 @@ docker/postgres_data/
 
 # Impeccable design-skill scratch output (review screenshots, not source)
 .impeccable/
+
+# Graphify generated reports, graphs, and analysis caches
+/graphify-out/
