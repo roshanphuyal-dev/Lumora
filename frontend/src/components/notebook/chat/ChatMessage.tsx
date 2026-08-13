@@ -7,6 +7,7 @@ import { MessageRenderer } from "@/components/notebook/chat/MessageRenderer"
 import type { ChatMessageData } from "@/components/notebook/chat/types"
 import { useSearchTopicImage } from "@/hooks/use-image-search"
 import { ApiError } from "@/lib/api"
+import type { ConversationMessage } from "@/lib/chat"
 import { cn } from "@/lib/utils"
 
 interface ChatMessageProps {
@@ -14,9 +15,19 @@ interface ChatMessageProps {
   selected: boolean
   onToggleSelected: (id: string) => void
   notebookId: string
+  conversationId: string
+  onMessageUpdated: (message: ConversationMessage) => void
   // The user question this answer responds to, when known -- see FindImageAction's
   // comment for why it's preferred over the answer text as the search query.
   precedingUserQuestion?: string
+}
+
+interface FindImageActionProps {
+  notebookId: string
+  conversationId: string
+  message: ChatMessageData
+  precedingUserQuestion?: string
+  onMessageUpdated: (message: ConversationMessage) => void
 }
 
 function errorMessage(error: unknown, fallback: string) {
@@ -39,15 +50,35 @@ function hostnameFor(url: string): string {
 // asked about, so it's the preferred query source. It's only missing for legacy/edge
 // cases (e.g. the very first message isn't an answer, or history didn't load a pair), so
 // fall back to a truncated slice of the answer's own content in that case.
-function FindImageAction({ notebookId, message, precedingUserQuestion }: { notebookId: string; message: ChatMessageData; precedingUserQuestion?: string }) {
+function FindImageAction({
+  notebookId,
+  conversationId,
+  message,
+  precedingUserQuestion,
+  onMessageUpdated,
+}: FindImageActionProps) {
   const [triggered, setTriggered] = useState(false)
-  const searchMutation = useSearchTopicImage(notebookId)
+  const searchMutation = useSearchTopicImage(notebookId, conversationId, message.id)
 
   function handleFindImage() {
     const query = precedingUserQuestion?.trim() || message.content.trim().slice(0, 200)
     if (!query) return
     setTriggered(true)
-    searchMutation.mutate(query)
+    searchMutation.mutate(query, { onSuccess: onMessageUpdated })
+  }
+
+  const imageResult = searchMutation.data?.image_result ?? message.image_result
+
+  if (imageResult) {
+    return (
+      <ImageResultCard
+        imageUrl={imageResult.image_url}
+        attribution={imageResult.attribution}
+        license={imageResult.license}
+        sourceUrl={imageResult.source_url}
+        alt={precedingUserQuestion || "Topic-relevant image"}
+      />
+    )
   }
 
   if (!triggered) {
@@ -78,17 +109,8 @@ function FindImageAction({ notebookId, message, precedingUserQuestion }: { noteb
           {errorMessage(searchMutation.error, "Couldn't search for an image right now.")}
         </p>
       )}
-      {searchMutation.isSuccess && !searchMutation.data.found && (
+      {searchMutation.isSuccess && !searchMutation.data.image_result && (
         <p className="text-sm text-muted-foreground">No matching image found for this topic.</p>
-      )}
-      {searchMutation.isSuccess && searchMutation.data.found && searchMutation.data.image_url && (
-        <ImageResultCard
-          imageUrl={searchMutation.data.image_url}
-          attribution={searchMutation.data.attribution}
-          license={searchMutation.data.license}
-          sourceUrl={searchMutation.data.source_url}
-          alt={precedingUserQuestion || "Topic-relevant image"}
-        />
       )}
     </div>
   )
@@ -101,6 +123,8 @@ export const ChatMessage = memo(function ChatMessage({
   selected,
   onToggleSelected,
   notebookId,
+  conversationId,
+  onMessageUpdated,
   precedingUserQuestion,
 }: ChatMessageProps) {
   const isUser = message.role === "user"
@@ -185,7 +209,13 @@ export const ChatMessage = memo(function ChatMessage({
           </p>
         )}
         {!isUser && !isWebSearch && !message.error && (
-          <FindImageAction notebookId={notebookId} message={message} precedingUserQuestion={precedingUserQuestion} />
+          <FindImageAction
+            notebookId={notebookId}
+            conversationId={conversationId}
+            message={message}
+            precedingUserQuestion={precedingUserQuestion}
+            onMessageUpdated={onMessageUpdated}
+          />
         )}
       </div>
     </div>

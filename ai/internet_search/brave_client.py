@@ -66,7 +66,7 @@ class BraveClient:
                         "Accept": "application/json",
                         "X-Subscription-Token": self._api_key,
                     },
-                    params={"q": query, "count": max_results},
+                    params={"q": query, "maximum_number_of_urls": max_results},
                 )
                 response.raise_for_status()
                 payload = response.json()
@@ -75,7 +75,7 @@ class BraveClient:
             # request URL, which carries `query` as a GET param) and never the response
             # body (ADR 0012).
             raise BraveError(f"Brave search failed: {_describe_http_status_error(exc)}") from exc
-        except Exception as exc:  # noqa: BLE001 - normalize every other failure to BraveError;
+        except Exception as exc:  # normalize every other failure to BraveError;
             # deliberately not interpolating `exc` for the same raw-query-text reason above.
             raise BraveError(f"Brave search failed: {exc.__class__.__name__}") from exc
 
@@ -94,7 +94,7 @@ class BraveClient:
 def _describe_http_status_error(exc: httpx.HTTPStatusError) -> str:
     status_code = exc.response.status_code
     retry_after = exc.response.headers.get("Retry-After")
-    if retry_after:
+    if retry_after and retry_after.isascii() and retry_after.isdigit():
         return f"HTTP {status_code} (Retry-After: {retry_after})"
     return f"HTTP {status_code}"
 

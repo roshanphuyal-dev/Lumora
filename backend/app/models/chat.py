@@ -19,6 +19,11 @@ class MessageRole(enum.StrEnum):
     ASSISTANT = "assistant"
 
 
+class MessageKind(enum.StrEnum):
+    NOTEBOOK = "notebook"
+    WEB_SEARCH = "web_search"
+
+
 class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "conversations"
 
@@ -60,10 +65,22 @@ class Message(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         nullable=False,
     )
+    kind: Mapped[MessageKind] = mapped_column(
+        SAEnum(
+            MessageKind,
+            name="message_kind",
+            native_enum=True,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+        default=MessageKind.NOTEBOOK,
+        server_default=MessageKind.NOTEBOOK.value,
+    )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
     citations: Mapped[list[dict[str, str | None]]] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
+    image_result: Mapped[dict[str, str] | None] = mapped_column(JSONB, nullable=True)
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")

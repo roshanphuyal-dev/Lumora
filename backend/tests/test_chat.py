@@ -8,7 +8,9 @@ from ai.orchestrator.schemas import (
     AIResponse,
     AIStreamChunk,
     ChatResponseRequest,
+    Citation,
     ProviderName,
+    TopicImageResult,
 )
 from ai.orchestrator.task_types import TaskType
 from fastapi import HTTPException
@@ -16,7 +18,7 @@ from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.chat import Conversation, Message, MessageRole
+from app.models.chat import Conversation, Message, MessageKind, MessageRole
 from app.models.document import Document, DocumentParseStatus
 from app.models.notebook import Notebook, NotebookSource, NotebookSourceIndexStatus
 from app.models.user import User
@@ -360,3 +362,93 @@ async def test_conversation_routes_require_auth_and_hide_cross_user_messages(
     owner_response = await client.get(messages_url, headers=_auth(owner_token))
     assert owner_response.status_code == 200
     assert owner_response.json() == []
+
+
+async def test_conversation_web_search_persists_pair_in_message_history(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    unique_email: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    token = await _register_and_login(client, unique_email)
+    owner = await _user(db_session, unique_email)
+    notebook = await _notebook(db_session, owner)
+    conversation = await _conversation(db_session, owner, notebook)
+    search_web = AsyncMock(
+        return_value=(
+            "Paris hosted the 2024 Summer Olympics.",
+            "gemini",
+            [Citation(source_id="https://example.com/olympics", excerpt="Paris 2024")],
+        )
+    )
+    monkeypatch.setattr(chat_service.notebook_service, "search_web", search_web)
+    base_url = f"/api/v1/notebooks/{notebook.id}/conversations/{conversation.id}"
+
+    response = await client.post(
+        f"{base_url}/search",
+        json={"query": "Where were the latest Summer Olympics?"},
+        headers=_auth(token),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["user_message"]["kind"] == "web_search"
+    assert payload["assistant_message"]["kind"] == "web_search"
+    assert payload["assistant_message"]["citations"][0]["source_id"] == (
+        "https://example.com/olympics"
+    )
+
+    history = await client.get(f"{base_url}/messages", headers=_auth(token))
+    assert history.status_code == 200
+    assert [(item["role"], item["kind"]) for item in history.json()] == [
+        ("user", "web_search"),
+        ("assistant", "web_search"),
+    ]
+    assert history.json()[1]["citations"] == payload["assistant_message"]["citations"]
+
+
+async def test_attach_message_image_persists_result_in_message_history(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    unique_email: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    token = await _register_and_login(client, unique_email)
+    owner = await _user(db_session, unique_email)
+    notebook = await _notebook(db_session, owner)
+    conversation = await _conversation(db_session, owner, notebook)
+    assistant = Message(
+        conversation_id=conversation.id,
+        role=MessageRole.ASSISTANT,
+        kind=MessageKind.NOTEBOOK,
+        content="Photosynthesis turns light into chemical energy.",
+        citations=[],
+    )
+    db_session.add(assistant)
+    await db_session.commit()
+    await db_session.refresh(assistant)
+    image = TopicImageResult(
+        image_url="https://images.example/photosynthesis.jpg",
+        attribution="Example Photographer",
+        license="CC BY 4.0",
+        source_url="https://example.com/photosynthesis",
+    )
+    monkeypatch.setattr(
+        chat_service.notebook_service,
+        "search_topic_image",
+        AsyncMock(return_value=image),
+    )
+    base_url = f"/api/v1/notebooks/{notebook.id}/conversations/{conversation.id}"
+
+    response = await client.put(
+        f"{base_url}/messages/{assistant.id}/image",
+        json={"query": "photosynthesis"},
+        headers=_auth(token),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["image_result"] == image.model_dump()
+    history = await client.get(f"{base_url}/messages", headers=_auth(token))
+    assert history.status_code == 200
+    assert history.json()[0]["id"] == str(assistant.id)
+    assert history.json()[0]["image_result"] == image.model_dump()

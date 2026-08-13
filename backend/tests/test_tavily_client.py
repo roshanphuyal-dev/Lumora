@@ -82,17 +82,32 @@ async def test_search_sends_bearer_auth_and_no_answer_mode() -> None:
     assert kwargs["json"]["query"] == "q"
 
 
-async def test_search_raises_on_http_error() -> None:
+async def test_search_raises_on_rate_limit_without_leaking_request_or_response() -> None:
     client = TavilyClient(api_key="test-key")
-    status_error = httpx.HTTPStatusError("rate limited", request=MagicMock(), response=MagicMock())
+    error_response = MagicMock()
+    error_response.status_code = 429
+    error_response.headers = {"Retry-After": "30"}
+    status_error = httpx.HTTPStatusError(
+        "secret query and provider response body",
+        request=MagicMock(),
+        response=error_response,
+    )
     response = _mock_response(payload={}, status_error=status_error)
+    http_context = _mock_http_client(response=response)
 
     with patch(
         "ai.internet_search.tavily_client.httpx.AsyncClient",
-        return_value=_mock_http_client(response=response),
+        return_value=http_context,
     ):
-        with pytest.raises(TavilyError, match="rate limited"):
-            await client.search("q")
+        with pytest.raises(TavilyError) as exc_info:
+            await client.search("secret query")
+
+    message = str(exc_info.value)
+    assert "secret query" not in message
+    assert "provider response body" not in message
+    assert "HTTP 429" in message
+    assert "Retry-After: 30" in message
+    http_context.__aenter__.return_value.post.assert_awaited_once()
 
 
 async def test_search_raises_on_empty_results() -> None:

@@ -168,7 +168,13 @@ future `app.models.question.QuestionType` (Milestone 1, DB schema) validates ind
 at the API layer.
 """
 
-_OBJECTIVE_QUESTION_TYPES = {"mcq", "true_false", "fill_blank", "matching", "assertion_reason"}
+_OBJECTIVE_QUESTION_TYPES = {
+    "mcq",
+    "true_false",
+    "fill_blank",
+    "matching",
+    "assertion_reason",
+}
 """Question types answered via `QuestionItem.correct_answer` (single verifiable answer)."""
 
 ASSERTION_REASON_OPTIONS: tuple[str, str, str, str] = (

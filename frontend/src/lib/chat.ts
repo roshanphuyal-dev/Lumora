@@ -10,6 +10,13 @@ export interface ChatCitation {
   excerpt?: string | null
 }
 
+export interface MessageImageResult {
+  image_url: string
+  attribution: string
+  license: string
+  source_url: string
+}
+
 export interface Conversation {
   id: string
   notebook_id: string
@@ -25,6 +32,8 @@ export interface ConversationMessage {
   content: string
   provider: string | null
   citations: ChatCitation[]
+  kind: "notebook" | "web_search"
+  image_result: MessageImageResult | null
   created_at: string
 }
 

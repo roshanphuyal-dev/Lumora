@@ -118,7 +118,7 @@ async def test_search_hits_llm_context_endpoint_with_subscription_token_header()
     args, kwargs = http_client.get.call_args
     assert args[0] == "https://api.search.brave.com/res/v1/llm/context"
     assert kwargs["headers"]["X-Subscription-Token"] == "test-key"
-    assert kwargs["params"] == {"q": "q", "count": 7}
+    assert kwargs["params"] == {"q": "q", "maximum_number_of_urls": 7}
 
 
 async def test_search_raises_on_http_error_without_leaking_query_or_url() -> None:
@@ -137,10 +137,11 @@ async def test_search_raises_on_http_error_without_leaking_query_or_url() -> Non
         response=error_response,
     )
     response = _mock_response(payload={}, status_error=status_error)
+    http_context = _mock_http_client(response=response)
 
     with patch(
         "ai.internet_search.brave_client.httpx.AsyncClient",
-        return_value=_mock_http_client(response=response),
+        return_value=http_context,
     ):
         with pytest.raises(BraveError) as exc_info:
             await client.search("super secret student query")
@@ -150,6 +151,7 @@ async def test_search_raises_on_http_error_without_leaking_query_or_url() -> Non
     assert "secret" not in message
     assert "429" in message
     assert "30" in message
+    http_context.__aenter__.return_value.get.assert_awaited_once()
 
 
 async def test_search_raises_on_connection_error_without_leaking_query() -> None:

@@ -23,7 +23,11 @@ import os
 
 import redis.asyncio as redis
 
-from ai.internet_search.schemas import InternetSearchResult, SearchProvider, normalize_query
+from ai.internet_search.schemas import (
+    InternetSearchResult,
+    SearchProvider,
+    normalize_query,
+)
 
 _REDIS_URL_ENV = "REDIS_URL"
 _DEFAULT_REDIS_URL = "redis://localhost:6379/0"
@@ -83,7 +87,7 @@ async def set_cached_search_result(result: InternetSearchResult, *, max_results:
             result.model_dump_json(),
             ex=_TAVILY_TTL_SECONDS,
         )
-    except Exception:  # noqa: BLE001 - caching is best-effort, never fails the request
+    except Exception:  # noqa: BLE001, S110 - caching is best-effort, never fails the request
         pass
     finally:
         await client.aclose()

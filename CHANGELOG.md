@@ -53,6 +53,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 - `docs/adr/0010-topic-image-retrieval.md`: architecture for pulling a real, topic-relevant image into a chat answer (Wikimedia Commons primary, Openverse fallback — not AI image generation, and not the Google Custom Search API by default, which needs a billing-enabled key). This is `docs/ROADMAP.md` Phase 3 scope ("Image retrieval"); specified now, not built, to keep Phase 1/2 focus intact — same pattern as ADR 0009.
 
 ### Fixed
+- Web-search turns and topic images attached to chat answers are now stored with their
+  conversation messages, so web citations and image cards survive navigation and reloads.
+- Wikimedia Commons topic-image search now rejects non-image File results (such as PDFs,
+  DjVu documents, and audio) using the API-provided MIME type, allowing the existing
+  Openverse fallback to run instead of rendering a broken image.
 - "Ask" on a notebook now actually reads the notebook's uploaded sources instead of answering blind. `ask_question` previously called Gemini with an always-empty `context`, so an indexed source made no difference to the answer. It now retrieves a grounded answer + citations from NotebookLM first (`TaskType.NOTEBOOK_QUERY`, `ai/notebooklm/client.py:query_notebook`) whenever the notebook has an `indexed` source, and hands that to Gemini as context for teaching-framed phrasing; falls back to the previous ungrounded call if there's no indexed source yet or the NotebookLM call fails. `NotebookAskResponse` now carries `citations`.
 - `POST /api/v1/notebooks/{id}/ask` (`backend/app/services/notebook_service.py`, `backend/app/schemas/notebook.py`): a plain (ungrounded — no RAG yet, `docs/ROADMAP.md` Phase 4) teaching-explanation question via the AI orchestration layer, Gemini with OpenCode Zen fallback (ADR 0008). Scoped to notebooks the caller owns; 502 if every provider fails.
 - "Ask a question" on the notebook detail page (`frontend/src/components/notebook/AskNotebookSection.tsx`): single-turn question/answer against the new `ask` endpoint, answer rendered as real Markdown (`react-markdown`, new dependency — the raw `**bold**`/`##`/table syntax was unreadable as plain text). Explicitly labeled as not source-grounded.

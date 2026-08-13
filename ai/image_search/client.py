@@ -37,7 +37,9 @@ _WIKIMEDIA_API_URL = "https://commons.wikimedia.org/w/api.php"
 _OPENVERSE_API_URL = "https://api.openverse.org/v1/images/"
 _OPENVERSE_TOKEN_URL = "https://api.openverse.org/v1/auth_tokens/token/"
 _TIMEOUT_SECONDS = 15.0
-_USER_AGENT = "Lumora-AI-Tutor/1.0 (educational study tool; topic image retrieval, ADR 0010)"
+_USER_AGENT = (
+    "Lumora-AI-Tutor/1.0 (educational study tool; topic image retrieval, ADR 0010)"
+)
 
 
 class WikimediaError(RuntimeError):
@@ -75,20 +77,22 @@ class WikimediaClient:
                         "action": "query",
                         "generator": "search",
                         "gsrsearch": query,
-                        "gsrnamespace": "6",  # File namespace — image pages only.
+                        "gsrnamespace": "6",  # File namespace — includes non-image media.
                         "gsrlimit": "1",
                         "prop": "imageinfo",
-                        "iiprop": "url|extmetadata",
+                        "iiprop": "url|mime|extmetadata",
                         "format": "json",
                     },
                 )
                 response.raise_for_status()
                 payload = response.json()
-        except Exception as exc:  # noqa: BLE001 - normalize every failure to WikimediaError;
+        except Exception as exc:  # normalize every failure to WikimediaError;
             # deliberately not interpolating `exc` (its `str()` can embed the request URL,
             # which carries the raw query text — never logged, per docs/SECURITY.md).
             error_name = exc.__class__.__name__
-            raise WikimediaError(f"Wikimedia Commons search failed: {error_name}") from exc
+            raise WikimediaError(
+                f"Wikimedia Commons search failed: {error_name}"
+            ) from exc
 
         return _parse_wikimedia_result(payload)
 
@@ -101,7 +105,9 @@ class OpenverseClient:
     limit — optional, not required for this fallback to function.
     """
 
-    def __init__(self, client_id: str | None = None, client_secret: str | None = None) -> None:
+    def __init__(
+        self, client_id: str | None = None, client_secret: str | None = None
+    ) -> None:
         self._client_id = client_id or os.environ.get("OPENVERSE_CLIENT_ID")
         self._client_secret = client_secret or os.environ.get("OPENVERSE_CLIENT_SECRET")
 
@@ -133,10 +139,12 @@ class OpenverseClient:
                 )
                 response.raise_for_status()
                 payload = response.json()
-        except Exception as exc:  # noqa: BLE001 - normalize every failure to OpenverseError;
+        except Exception as exc:  # normalize every failure to OpenverseError;
             # deliberately not interpolating `exc` for the same raw-query-text reason as
             # `WikimediaClient._fetch`.
-            raise OpenverseError(f"Openverse search failed: {exc.__class__.__name__}") from exc
+            raise OpenverseError(
+                f"Openverse search failed: {exc.__class__.__name__}"
+            ) from exc
 
         return _parse_openverse_result(payload)
 
@@ -179,18 +187,26 @@ def _parse_wikimedia_result(payload: dict) -> TopicImageResult | None:
         return None
     info = imageinfo[0]
 
+    mime_type = info.get("mime")
     image_url = info.get("url")
     source_url = info.get("descriptionurl")
     extmetadata = info.get("extmetadata") or {}
-    license_value = _extmetadata_value(extmetadata, "LicenseShortName") or _extmetadata_value(
-        extmetadata, "License"
-    )
+    license_value = _extmetadata_value(
+        extmetadata, "LicenseShortName"
+    ) or _extmetadata_value(extmetadata, "License")
     attribution = _strip_html(_extmetadata_value(extmetadata, "Artist"))
 
     # Attribution/license are required fields (ADR 0010) — a Commons page missing either
     # isn't a usable result. Skip it (treat as no match) rather than fabricate a generic
     # placeholder that would misrepresent the actual licensing terms.
-    if not image_url or not source_url or not license_value or not attribution:
+    if (
+        not isinstance(mime_type, str)
+        or not mime_type.lower().startswith("image/")
+        or not image_url
+        or not source_url
+        or not license_value
+        or not attribution
+    ):
         return None
 
     return TopicImageResult(
@@ -232,7 +248,9 @@ def _parse_openverse_result(payload: dict) -> TopicImageResult | None:
     attribution = result.get("attribution")
     license_name = result.get("license")
     license_version = result.get("license_version")
-    license_value = f"{license_name.upper()} {license_version}".strip() if license_name else None
+    license_value = (
+        f"{license_name.upper()} {license_version}".strip() if license_name else None
+    )
 
     # Same required-fields contract as `_parse_wikimedia_result` — skip rather than
     # fabricate a placeholder attribution/license.

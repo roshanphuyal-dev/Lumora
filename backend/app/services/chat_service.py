@@ -1,6 +1,7 @@
 import json
 import uuid
 from collections.abc import AsyncIterator
+from datetime import timedelta
 
 from ai.orchestrator.orchestrator import OrchestrationError, run_task, stream_task
 from ai.orchestrator.schemas import ChatResponseRequest, Citation, NotebookQueryRequest
@@ -9,8 +10,9 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.chat import Conversation, Message, MessageRole
+from app.models.chat import Conversation, Message, MessageKind, MessageRole
 from app.models.notebook import NotebookSourceIndexStatus
+from app.services import notebook_service
 from app.services.notebook_service import get_owned_notebook
 
 _HISTORY_MESSAGE_LIMIT = 20
@@ -75,6 +77,74 @@ async def list_messages(
         .order_by(Message.created_at.asc())
     )
     return list(result)
+
+
+async def search_web(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    notebook_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    query: str,
+) -> tuple[Message, Message]:
+    conversation = await get_owned_conversation(db, user_id, notebook_id, conversation_id)
+    user_message = Message(
+        conversation_id=conversation_id,
+        role=MessageRole.USER,
+        kind=MessageKind.WEB_SEARCH,
+        content=query,
+        citations=[],
+    )
+    db.add(user_message)
+    if conversation.title is None:
+        conversation.title = query[:255]
+    # Match streamed chat: the user's turn is durable before the external provider call.
+    # The separate commit also gives the pair deterministic chronological ordering.
+    await db.commit()
+    await db.refresh(user_message)
+
+    content, provider, citations = await notebook_service.search_web(
+        db, user_id, notebook_id, query
+    )
+    assistant_message = Message(
+        conversation_id=conversation_id,
+        role=MessageRole.ASSISTANT,
+        kind=MessageKind.WEB_SEARCH,
+        content=content,
+        provider=provider,
+        citations=[citation.model_dump() for citation in citations],
+        created_at=user_message.created_at + timedelta(microseconds=1),
+    )
+    db.add(assistant_message)
+    await db.commit()
+    await db.refresh(assistant_message)
+    return user_message, assistant_message
+
+
+async def attach_message_image(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    notebook_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    message_id: uuid.UUID,
+    query: str,
+) -> Message:
+    await get_owned_conversation(db, user_id, notebook_id, conversation_id)
+    message = await db.scalar(
+        select(Message).where(
+            Message.id == message_id,
+            Message.conversation_id == conversation_id,
+            Message.role == MessageRole.ASSISTANT,
+        )
+    )
+    if message is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+
+    result = await notebook_service.search_topic_image(db, user_id, notebook_id, query)
+    if result is not None:
+        message.image_result = result.model_dump()
+        await db.commit()
+        await db.refresh(message)
+    return message
 
 
 async def prepare_stream(
@@ -181,9 +251,11 @@ def _message_payload(message: Message) -> dict[str, object]:
         "id": str(message.id),
         "conversation_id": str(message.conversation_id),
         "role": message.role.value,
+        "kind": message.kind.value,
         "content": message.content,
         "provider": message.provider,
         "citations": message.citations,
+        "image_result": message.image_result,
         "created_at": message.created_at.isoformat(),
     }
 

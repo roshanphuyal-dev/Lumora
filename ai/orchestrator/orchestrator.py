@@ -653,7 +653,9 @@ async def _run_internet_search(
     """
     errors: list[str] = []
     result: InternetSearchResult | None = await get_cached_search_result(
-        provider=SearchProvider.TAVILY, query=request.query, max_results=request.max_results
+        provider=SearchProvider.TAVILY,
+        query=request.query,
+        max_results=request.max_results,
     )
 
     if result is None:

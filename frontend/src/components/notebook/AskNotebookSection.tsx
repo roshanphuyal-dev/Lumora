@@ -99,6 +99,8 @@ export function AskNotebookSection({
             content: message.content,
             provider: message.provider ?? undefined,
             citations: message.citations,
+            kind: message.kind,
+            image_result: message.image_result,
           }))
         },
         onError: (detail) => {
@@ -122,7 +124,7 @@ export function AskNotebookSection({
   // question (never automatic classification, confirmed design decision). Unlike the
   // streaming ask flow, `/search` is a single request/response, so there's no optimistic
   // placeholder -- the question+result pair is appended to the list together on success.
-  const searchMutation = useSearchWeb(notebookId)
+  const searchMutation = useSearchWeb(notebookId, chatQuery.data?.conversation.id)
 
   const messages = chatQuery.data?.messages ?? []
 
@@ -135,15 +137,8 @@ export function AskNotebookSection({
         onSuccess: (result) => {
           updateMessages((current) => [
             ...current,
-            { id: makeId(), role: "user", content: question },
-            {
-              id: makeId(),
-              role: "assistant",
-              kind: "web_search",
-              content: result.content,
-              provider: result.provider,
-              citations: result.citations,
-            },
+            result.user_message,
+            result.assistant_message,
           ])
         },
       })
@@ -225,6 +220,12 @@ export function AskNotebookSection({
             selected={selectedIds.has(message.id)}
             onToggleSelected={toggle}
             notebookId={notebookId}
+            conversationId={chatQuery.data?.conversation.id ?? ""}
+            onMessageUpdated={(updatedMessage) =>
+              updateMessages((current) =>
+                current.map((item) => (item.id === updatedMessage.id ? updatedMessage : item)),
+              )
+            }
             precedingUserQuestion={
               message.role === "assistant" && messages[index - 1]?.role === "user"
                 ? messages[index - 1]?.content

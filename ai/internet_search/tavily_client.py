@@ -64,8 +64,12 @@ class TavilyClient:
                 )
                 response.raise_for_status()
                 payload = response.json()
-        except Exception as exc:  # noqa: BLE001 - normalize every provider error to TavilyError
-            raise TavilyError(f"Tavily search failed: {exc}") from exc
+        except httpx.HTTPStatusError as exc:
+            raise TavilyError(f"Tavily search failed: {_describe_http_status_error(exc)}") from exc
+        except Exception as exc:  # normalize every other failure to TavilyError;
+            # never interpolate `exc`: transport/decoding errors may contain provider
+            # response data or request details (ADR 0012).
+            raise TavilyError(f"Tavily search failed: {exc.__class__.__name__}") from exc
 
         items = _extract_items(payload)
         if not items:
@@ -103,6 +107,15 @@ def _extract_items(payload: dict) -> list[InternetSearchItem]:
             )
         )
     return items
+
+
+def _describe_http_status_error(exc: httpx.HTTPStatusError) -> str:
+    """Return only safe, operationally useful HTTP metadata."""
+    status_code = exc.response.status_code
+    retry_after = exc.response.headers.get("Retry-After")
+    if retry_after and retry_after.isascii() and retry_after.isdigit():
+        return f"HTTP {status_code} (Retry-After: {retry_after})"
+    return f"HTTP {status_code}"
 
 
 def _parse_datetime(value: object) -> datetime | None:

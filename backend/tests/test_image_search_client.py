@@ -60,6 +60,7 @@ WIKIMEDIA_HIT_PAYLOAD = {
                 "imageinfo": [
                     {
                         "url": "https://upload.wikimedia.org/wikipedia/commons/simplex.png",
+                        "mime": "image/png",
                         "descriptionurl": "https://commons.wikimedia.org/wiki/File:simplex.png",
                         "extmetadata": {
                             "LicenseShortName": {"value": "CC BY-SA 4.0"},
@@ -131,6 +132,43 @@ async def test_wikimedia_search_image_returns_none_when_license_or_attribution_m
         result = await client.search_image("topic")
 
     assert result is None
+
+
+async def test_wikimedia_search_image_returns_none_for_non_image_file() -> None:
+    """Commons' File namespace also contains PDFs, DjVu files, and audio. A licensed
+    non-image result must fall through to the next provider instead of reaching an img tag.
+    """
+    client = WikimediaClient()
+    payload = {
+        "query": {
+            "pages": {
+                "123": {
+                    "imageinfo": [
+                        {
+                            "url": "https://upload.wikimedia.org/wikipedia/commons/document.pdf",
+                            "mime": "application/pdf",
+                            "descriptionurl": (
+                                "https://commons.wikimedia.org/wiki/File:document.pdf"
+                            ),
+                            "extmetadata": {
+                                "LicenseShortName": {"value": "CC BY-SA 4.0"},
+                                "Artist": {"value": "Jane Doe"},
+                            },
+                        }
+                    ]
+                }
+            }
+        }
+    }
+    response = _mock_response(payload=payload)
+    http_context = _mock_http_client(get_response=response)
+
+    with patch("ai.image_search.client.httpx.AsyncClient", return_value=http_context):
+        result = await client.search_image("vague notebook summary")
+
+    assert result is None
+    request_params = http_context.__aenter__.return_value.get.await_args.kwargs["params"]
+    assert request_params["iiprop"] == "url|mime|extmetadata"
 
 
 async def test_wikimedia_search_image_raises_on_http_error() -> None:

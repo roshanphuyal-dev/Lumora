@@ -4,7 +4,15 @@ from fastapi import APIRouter, status
 from fastapi.responses import StreamingResponse
 
 from app.core.dependencies import CurrentUser, DbSession
-from app.schemas.chat import ConversationCreate, ConversationRead, MessageCreate, MessageRead
+from app.schemas.chat import (
+    ConversationCreate,
+    ConversationRead,
+    MessageCreate,
+    MessageImageCreate,
+    MessageRead,
+    WebSearchCreate,
+    WebSearchMessagePair,
+)
 from app.services import chat_service
 
 router = APIRouter(prefix="/notebooks/{notebook_id}/conversations", tags=["chat"])
@@ -58,3 +66,43 @@ async def stream_message(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/{conversation_id}/search", response_model=WebSearchMessagePair)
+async def search_web(
+    notebook_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    payload: WebSearchCreate,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> WebSearchMessagePair:
+    user_message, assistant_message = await chat_service.search_web(
+        db, current_user.id, notebook_id, conversation_id, payload.query
+    )
+    return WebSearchMessagePair(
+        user_message=MessageRead.model_validate(user_message),
+        assistant_message=MessageRead.model_validate(assistant_message),
+    )
+
+
+@router.put(
+    "/{conversation_id}/messages/{message_id}/image",
+    response_model=MessageRead,
+)
+async def attach_message_image(
+    notebook_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    message_id: uuid.UUID,
+    payload: MessageImageCreate,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> MessageRead:
+    message = await chat_service.attach_message_image(
+        db,
+        current_user.id,
+        notebook_id,
+        conversation_id,
+        message_id,
+        payload.query,
+    )
+    return MessageRead.model_validate(message)

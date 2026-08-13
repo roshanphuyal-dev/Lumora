@@ -87,5 +87,5 @@ async def set_cached_result(query: str, provider: str, result: TopicImageResult 
         client = _get_redis_client()
         payload = _NOT_FOUND_SENTINEL if result is None else result.model_dump_json()
         await client.set(_cache_key(query, provider), payload, ex=_CACHE_TTL_SECONDS)
-    except Exception:  # noqa: BLE001 - cache is best-effort, never blocks a search
+    except Exception:  # noqa: BLE001, S110 - cache is best-effort, never blocks a search
         pass
