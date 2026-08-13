@@ -25,6 +25,7 @@ dependencies = [
     "pytesseract>=0.3.13",
     "pillow>=11.0",
     "supabase>=2.31.0",
+    "pgvector>=0.3.6",
 ]
 
 [tool.uv.sources]

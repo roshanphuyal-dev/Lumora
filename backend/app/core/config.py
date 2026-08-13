@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     cors_origins: list[str] = ["http://localhost:5173"]
     redis_url: str = "redis://localhost:6379/0"
+    # Global rollout gates. Phase 4 intentionally starts without per-user targeting.
+    rag_enabled: bool = False
+    personalization_enabled: bool = False
     # Dev/test stub root for LocalFileStorage (app/core/storage.py) — used when
     # Supabase settings below are unset (local dev/tests).
     local_storage_root: str = "./storage"

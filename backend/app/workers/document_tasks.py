@@ -48,4 +48,10 @@ async def _parse_document(document_id: uuid.UUID) -> None:
             await document_service.mark_parse_failed(db, document_id)
             return
 
-        await document_service.mark_parsed(db, document_id, parsed.text)
+        await document_service.mark_parsed(db, document_id, parsed)
+        from app.core.config import get_settings
+
+        if get_settings().rag_enabled:
+            from app.workers.rag_tasks import index_document_task
+
+            index_document_task.delay(str(document_id))

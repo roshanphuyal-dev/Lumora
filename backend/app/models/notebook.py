@@ -106,6 +106,8 @@ class NotebookSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=NotebookSourceIndexStatus.PENDING,
         server_default=NotebookSourceIndexStatus.PENDING.value,
     )
+    # Provider-native source identifier used to resolve NotebookLM citations.
+    notebooklm_source_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
 
     notebook: Mapped["Notebook"] = relationship(back_populates="sources")
     document: Mapped["Document"] = relationship(back_populates="notebook_sources")

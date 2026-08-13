@@ -12,6 +12,7 @@ from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from app.models.notebook import NotebookSource
+    from app.models.rag import Chunk, DocumentSection
 
 
 class DocumentParseStatus(enum.StrEnum):
@@ -20,6 +21,15 @@ class DocumentParseStatus(enum.StrEnum):
     PENDING = "pending"
     PROCESSING = "processing"
     DONE = "done"
+    FAILED = "failed"
+
+
+class DocumentRagStatus(enum.StrEnum):
+    """Lifecycle of local chunking and embedding, separate from NotebookLM indexing."""
+
+    PENDING = "pending"
+    INDEXING = "indexing"
+    INDEXED = "indexed"
     FAILED = "failed"
 
 
@@ -75,7 +85,24 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     # Nullable until parsing completes (or forever, if parsing fails).
     extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rag_status: Mapped[DocumentRagStatus] = mapped_column(
+        SAEnum(
+            DocumentRagStatus,
+            name="document_rag_status",
+            native_enum=True,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+        default=DocumentRagStatus.PENDING,
+        server_default=DocumentRagStatus.PENDING.value,
+    )
 
     notebook_sources: Mapped[list["NotebookSource"]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
+    )
+    sections: Mapped[list["DocumentSection"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan", order_by="DocumentSection.ordinal"
+    )
+    chunks: Mapped[list["Chunk"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan", order_by="Chunk.ordinal"
     )

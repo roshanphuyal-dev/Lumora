@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document, DocumentParseStatus
 from app.models.user import User
+from app.parsers.base import ParsedDocument
 from app.services import document_service
 
 
@@ -45,7 +46,9 @@ async def test_mark_processing_updates_status(db_session: AsyncSession) -> None:
 async def test_mark_parsed_sets_text_and_done_status(db_session: AsyncSession) -> None:
     document = await _create_document(db_session)
 
-    updated = await document_service.mark_parsed(db_session, document.id, "extracted text")
+    updated = await document_service.mark_parsed(
+        db_session, document.id, ParsedDocument(text="extracted text")
+    )
 
     assert updated.parse_status == DocumentParseStatus.DONE
     assert updated.extracted_text == "extracted text"

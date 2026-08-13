@@ -20,6 +20,7 @@ from app.models import (  # noqa: F401 -- register all models with Base.metadata
     notebook,
     quiz,
     quiz_attempt,
+    rag,
     user,
     weak_topic,
 )
@@ -58,8 +59,11 @@ async def _ensure_test_database_exists() -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 async def _prepare_database() -> AsyncGenerator[None]:
+    from sqlalchemy import text
+
     await _ensure_test_database_exists()
     async with test_engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
     yield
     async with test_engine.begin() as conn:

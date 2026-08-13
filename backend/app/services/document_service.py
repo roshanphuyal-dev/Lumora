@@ -20,7 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.storage import get_file_storage
 from app.models.document import Document, DocumentParseStatus
+from app.parsers.base import ParsedDocument
 from app.schemas.course import PageResult
+from app.services import rag_index_service
 
 
 async def get_document(db: AsyncSession, document_id: uuid.UUID) -> Document:
@@ -38,11 +40,9 @@ async def mark_processing(db: AsyncSession, document_id: uuid.UUID) -> Document:
     return document
 
 
-async def mark_parsed(db: AsyncSession, document_id: uuid.UUID, extracted_text: str) -> Document:
+async def mark_parsed(db: AsyncSession, document_id: uuid.UUID, parsed: ParsedDocument) -> Document:
     document = await get_document(db, document_id)
-    document.extracted_text = extracted_text
-    document.parse_status = DocumentParseStatus.DONE
-    await db.commit()
+    await rag_index_service.persist_parsed_document(db, document, parsed)
     await db.refresh(document)
     return document
 

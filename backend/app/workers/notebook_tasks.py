@@ -84,7 +84,7 @@ async def _index_notebook_source(notebook_source_id: uuid.UUID) -> None:
                 suffix = Path(document.filename).suffix
             tmp_path = await asyncio.to_thread(_write_temp_file, content, suffix)
 
-            await run_task(
+            response = await run_task(
                 TaskType.DOCUMENT_INDEX,
                 DocumentIndexRequest(
                     document_id=str(document.id),
@@ -100,7 +100,11 @@ async def _index_notebook_source(notebook_source_id: uuid.UUID) -> None:
             if tmp_path is not None:
                 await asyncio.to_thread(tmp_path.unlink, missing_ok=True)
 
-        await notebook_service.mark_source_indexed(db, notebook_source_id)
+        await notebook_service.mark_source_indexed(
+            db,
+            notebook_source_id,
+            getattr(response, "metadata", {}).get("notebooklm_source_id"),
+        )
 
 
 def _write_temp_file(content: bytes, suffix: str) -> Path:

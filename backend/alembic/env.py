@@ -16,6 +16,7 @@ from app.models import (  # noqa: F401 -- register models with Base.metadata
     notebook,
     quiz,
     quiz_attempt,
+    rag,
     user,
     weak_topic,
 )
