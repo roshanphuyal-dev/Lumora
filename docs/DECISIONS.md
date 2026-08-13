@@ -37,6 +37,8 @@ Index of Architecture Decision Records (ADRs) and the process for writing one. I
 | [0010](adr/0010-topic-image-retrieval.md) | Topic-Relevant Image Retrieval | Accepted |
 | [0011](adr/0011-quiz-evaluation-scoring-design.md) | Quiz Evaluation & Scoring Design | Accepted |
 | [0012](adr/0012-internet-search-integration.md) | Internet Search Integration (Tavily/Brave) | Accepted |
+| [0013](adr/0013-paper-search-integration.md) | Paper Search Integration (arXiv/Semantic Scholar) | Accepted |
+| [0014](adr/0014-phase-4-retrieval-personalization.md) | Phase 4 Retrieval and Personalization Architecture | Accepted |
 
 <!-- Add new rows here as ADRs are written. Keep this table the only content of substance in this file. -->
 
