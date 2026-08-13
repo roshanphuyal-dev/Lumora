@@ -80,6 +80,11 @@ async def test_search_sends_bearer_auth_and_no_answer_mode() -> None:
     assert kwargs["json"]["search_depth"] == "basic"
     assert kwargs["json"]["max_results"] == 7
     assert kwargs["json"]["query"] == "q"
+    # Regression guard for docs/SECURITY.md's Tavily invariant: only the bare query
+    # string and search parameters ever reach Tavily. Checking value-per-key (above)
+    # doesn't catch a future change that silently *adds* a key (e.g. notebook context
+    # appended to the request body) -- assert the full key set too.
+    assert set(kwargs["json"].keys()) == {"query", "search_depth", "include_answer", "max_results"}
 
 
 async def test_search_raises_on_rate_limit_without_leaking_request_or_response() -> None:
