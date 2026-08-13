@@ -1,5 +1,5 @@
 import { memo, useState } from "react"
-import { ExternalLink, Globe, ImageIcon, Loader2, MessageCircle, User } from "lucide-react"
+import { ExternalLink, GraduationCap, Globe, ImageIcon, Loader2, MessageCircle, User } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ImageResultCard } from "@/components/notebook/chat/ImageResultCard"
@@ -129,13 +129,15 @@ export const ChatMessage = memo(function ChatMessage({
 }: ChatMessageProps) {
   const isUser = message.role === "user"
   const isWebSearch = message.kind === "web_search"
+  const isPaperSearch = message.kind === "paper_search"
+  const isExternalSearch = isWebSearch || isPaperSearch
 
   return (
     <div
       data-message-id={message.id}
       className={cn(
         "flex items-start gap-2 rounded-lg border border-border p-3",
-        isUser ? "bg-muted/40" : isWebSearch ? "bg-accent/30" : "bg-card",
+        isUser ? "bg-muted/40" : isWebSearch ? "bg-accent/30" : isPaperSearch ? "bg-primary/5" : "bg-card",
       )}
     >
       <Checkbox
@@ -148,6 +150,8 @@ export const ChatMessage = memo(function ChatMessage({
         <User className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       ) : isWebSearch ? (
         <Globe className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+      ) : isPaperSearch ? (
+        <GraduationCap className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
       ) : (
         <MessageCircle className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
       )}
@@ -155,12 +159,15 @@ export const ChatMessage = memo(function ChatMessage({
         {!isUser && isWebSearch && (
           <p className="mb-1 text-xs font-medium text-muted-foreground">Web search</p>
         )}
+        {!isUser && isPaperSearch && (
+          <p className="mb-1 text-xs font-medium text-muted-foreground">Paper search</p>
+        )}
         <MessageRenderer content={message.content} />
         {!isUser && message.provider && (
           <p className="mt-1 text-xs text-muted-foreground">answered by {message.provider}</p>
         )}
         {/* Notebook-grounded citations: small muted plain-text excerpts of the source chunk. */}
-        {!isUser && !isWebSearch && message.citations && message.citations.length > 0 && (
+        {!isUser && !isExternalSearch && message.citations && message.citations.length > 0 && (
           <ul className="mt-2 flex flex-col gap-1 border-l-2 border-border pl-2">
             {message.citations.map((citation, index) => (
               <li key={citation.chunk_id ?? `${citation.source_id ?? "citation"}-${index}`} className="text-xs text-muted-foreground">
@@ -173,13 +180,15 @@ export const ChatMessage = memo(function ChatMessage({
             ))}
           </ul>
         )}
-        {/* Web-grounded citations: visually distinct card with clickable external links,
-            since these are URLs a student would want to actually visit -- not notebook
-            source chunks (docs/UI_UX.md's "make grounding visible" principle). */}
-        {!isUser && isWebSearch && !message.error && (
+        {/* Web/paper-grounded citations: visually distinct card with clickable external
+            links, since these are URLs a student would want to actually visit -- not
+            notebook source chunks (docs/UI_UX.md's "make grounding visible" principle). */}
+        {!isUser && isExternalSearch && !message.error && (
           message.citations && message.citations.length > 0 ? (
             <div className="mt-2 rounded-md border border-border bg-background/60 p-2">
-              <p className="mb-1.5 text-xs font-medium text-foreground">Web sources</p>
+              <p className="mb-1.5 text-xs font-medium text-foreground">
+                {isPaperSearch ? "Papers" : "Web sources"}
+              </p>
               <ul className="flex flex-col gap-1.5">
                 {message.citations.map((citation, index) => (
                   <li key={`${citation.source_id ?? "source"}-${index}`} className="text-xs">
@@ -200,7 +209,11 @@ export const ChatMessage = memo(function ChatMessage({
               </ul>
             </div>
           ) : (
-            <p className="mt-2 text-xs text-muted-foreground">No web sources were found for this search.</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {isPaperSearch
+                ? "No papers were found for this search."
+                : "No web sources were found for this search."}
+            </p>
           )
         )}
         {!isUser && message.error && (
@@ -208,7 +221,7 @@ export const ChatMessage = memo(function ChatMessage({
             {message.error}
           </p>
         )}
-        {!isUser && !isWebSearch && !message.error && (
+        {!isUser && !isExternalSearch && !message.error && (
           <FindImageAction
             notebookId={notebookId}
             conversationId={conversationId}

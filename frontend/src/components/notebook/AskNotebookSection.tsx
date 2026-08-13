@@ -1,11 +1,11 @@
 import { useId, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Globe } from "lucide-react"
+import { GraduationCap, Globe, MessageCircle } from "lucide-react"
 import { useForm } from "react-hook-form"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { ApiError } from "@/lib/api"
 import {
   ensureConversation,
@@ -15,6 +15,7 @@ import {
 } from "@/lib/chat"
 import { useChatSelection } from "@/hooks/use-chat-selection"
 import { useSearchWeb } from "@/hooks/use-internet-search"
+import { useSearchPapers } from "@/hooks/use-paper-search"
 import { ChatMessage } from "@/components/notebook/chat/ChatMessage"
 import { ChatExport } from "@/components/notebook/chat/ChatExport"
 import { ChatIndex } from "@/components/notebook/chat/ChatIndex"
@@ -23,6 +24,14 @@ import type { ChatMessageData } from "@/components/notebook/chat/types"
 interface AskFormValues {
   question: string
 }
+
+type AskSource = "notebook" | "web" | "papers"
+
+const SOURCE_OPTIONS: { value: AskSource; label: string; icon: typeof Globe }[] = [
+  { value: "notebook", label: "Notebook", icon: MessageCircle },
+  { value: "web", label: "Web", icon: Globe },
+  { value: "papers", label: "Papers", icon: GraduationCap },
+]
 
 interface ChatData {
   conversation: Conversation
@@ -49,8 +58,8 @@ export function AskNotebookSection({
   const { register, handleSubmit, reset: resetForm } = useForm<AskFormValues>()
   const { selectedIds, toggle, selectAll, clear } = useChatSelection()
   const listRef = useRef<HTMLDivElement>(null)
-  const [webSearchEnabled, setWebSearchEnabled] = useState(false)
-  const webSearchCheckboxId = useId()
+  const [source, setSource] = useState<AskSource>("notebook")
+  const sourceGroupId = useId()
 
   const chatQuery = useQuery({
     queryKey,
@@ -126,14 +135,29 @@ export function AskNotebookSection({
   // placeholder -- the question+result pair is appended to the list together on success.
   const searchMutation = useSearchWeb(notebookId, chatQuery.data?.conversation.id)
 
+  // Same "explicit, single request/response" shape as `searchMutation` -- `/paper-search`
+  // is conversation-scoped and persisted too, so the result is a saved message pair
+  // appended to the list the same way as `searchMutation`'s result.
+  const paperSearchMutation = useSearchPapers(notebookId, chatQuery.data?.conversation.id)
+
   const messages = chatQuery.data?.messages ?? []
 
   function onSubmit(values: AskFormValues) {
     const question = values.question.trim()
     if (!question) return
 
-    if (webSearchEnabled) {
+    if (source === "web") {
       searchMutation.mutate(question, {
+        onSuccess: (result) => {
+          updateMessages((current) => [
+            ...current,
+            result.user_message,
+            result.assistant_message,
+          ])
+        },
+      })
+    } else if (source === "papers") {
+      paperSearchMutation.mutate(question, {
         onSuccess: (result) => {
           updateMessages((current) => [
             ...current,
@@ -236,40 +260,76 @@ export function AskNotebookSection({
       </div>
 
       <div className="shrink-0 border-t border-border pt-3">
-        <div className="mb-2 flex items-center gap-2">
-          <Checkbox
-            id={webSearchCheckboxId}
-            checked={webSearchEnabled}
-            onCheckedChange={(checked) => setWebSearchEnabled(checked === true)}
-          />
-          <Label
-            htmlFor={webSearchCheckboxId}
-            className="flex cursor-pointer items-center gap-1.5 text-xs font-normal text-muted-foreground"
-          >
-            <Globe className="size-3.5" aria-hidden="true" />
-            Search the web instead of this notebook's sources
-          </Label>
-        </div>
+        <RadioGroup
+          value={source}
+          onValueChange={(value) => setSource(value as AskSource)}
+          className="mb-2 flex flex-row flex-wrap items-center gap-x-4 gap-y-1"
+          aria-label="Answer source"
+        >
+          {SOURCE_OPTIONS.map(({ value, label, icon: Icon }) => {
+            const id = `${sourceGroupId}-${value}`
+            return (
+              <div key={value} className="flex items-center gap-1.5">
+                <RadioGroupItem value={value} id={id} />
+                <Label
+                  htmlFor={id}
+                  className="flex cursor-pointer items-center gap-1.5 text-xs font-normal text-muted-foreground"
+                >
+                  <Icon className="size-3.5" aria-hidden="true" />
+                  {label}
+                </Label>
+              </div>
+            )
+          })}
+        </RadioGroup>
         <form className="flex gap-2" onSubmit={handleSubmit(onSubmit)}>
           <Input
-            placeholder={webSearchEnabled ? "e.g. Latest news on…" : "e.g. What is a derivative?"}
-            disabled={!chatQuery.data || sendMutation.isPending || searchMutation.isPending}
+            placeholder={
+              source === "web"
+                ? "e.g. Latest news on…"
+                : source === "papers"
+                  ? "e.g. Recent research on…"
+                  : "e.g. What is a derivative?"
+            }
+            disabled={
+              !chatQuery.data ||
+              sendMutation.isPending ||
+              searchMutation.isPending ||
+              paperSearchMutation.isPending
+            }
             maxLength={2000}
             {...register("question", { required: true })}
           />
-          <Button type="submit" disabled={!chatQuery.data || sendMutation.isPending || searchMutation.isPending}>
-            {webSearchEnabled
+          <Button
+            type="submit"
+            disabled={
+              !chatQuery.data ||
+              sendMutation.isPending ||
+              searchMutation.isPending ||
+              paperSearchMutation.isPending
+            }
+          >
+            {source === "web"
               ? searchMutation.isPending
                 ? "Searching…"
                 : "Search the web"
-              : sendMutation.isPending
-                ? "Thinking…"
-                : "Ask"}
+              : source === "papers"
+                ? paperSearchMutation.isPending
+                  ? "Searching…"
+                  : "Search papers"
+                : sendMutation.isPending
+                  ? "Thinking…"
+                  : "Ask"}
           </Button>
         </form>
         {searchMutation.isError && (
           <p className="mt-2 text-sm text-destructive" role="alert">
             {errorMessage(searchMutation.error, "Couldn't search the web right now. Try again.")}
+          </p>
+        )}
+        {paperSearchMutation.isError && (
+          <p className="mt-2 text-sm text-destructive" role="alert">
+            {errorMessage(paperSearchMutation.error, "Couldn't search for papers right now. Try again.")}
           </p>
         )}
       </div>

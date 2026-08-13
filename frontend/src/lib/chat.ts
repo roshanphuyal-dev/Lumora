@@ -32,7 +32,7 @@ export interface ConversationMessage {
   content: string
   provider: string | null
   citations: ChatCitation[]
-  kind: "notebook" | "web_search"
+  kind: "notebook" | "web_search" | "paper_search"
   image_result: MessageImageResult | null
   created_at: string
 }

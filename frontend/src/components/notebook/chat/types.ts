@@ -7,6 +7,6 @@ export interface ChatMessageData {
   provider?: string | null
   citations?: ChatCitation[]
   error?: string
-  kind?: "notebook" | "web_search"
+  kind?: "notebook" | "web_search" | "paper_search"
   image_result?: MessageImageResult | null
 }
