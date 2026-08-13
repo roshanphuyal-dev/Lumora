@@ -36,6 +36,7 @@ The catalogue of actual prompt templates used across the AI pipelines — the co
 | `quiz_grading` | Gemini | Evaluation workflow (free-text questions only, ADR 0011) | JSON list of `{question_id, score, is_correct, feedback, topic_tag}`, one batched call per attempt covering all `short_answer`/`long_answer`/`case_study` questions — structured output, `response_schema`, no OpenCode Zen fallback |
 | `chat_response` | Gemini | AI Chat workflow | markdown + citations |
 | `internet_search_synthesis` | Gemini | Internet Search workflow (ADR 0012) | free-text answer with inline `(source: <url>)` citations, synthesized from normalized Tavily/Brave results — never a search provider's own "answer" mode passed through |
+| `paper_search_synthesis` | Gemini | Paper Search workflow (ADR 0013) | free-text answer with inline `(source: <url>)` citations, synthesized from normalized arXiv/Semantic Scholar paper metadata (title/authors/venue/abstract) — never a provider summarization mode passed through |
 | `formatting_pass` | DeepSeek/Qwen | any cheap-tier reformat step | markdown/JSON |
 
 <!-- TODO: fill in exact prompt text once ai/prompts/ is implemented -->
