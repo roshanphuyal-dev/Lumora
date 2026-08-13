@@ -3,7 +3,7 @@
 import uuid
 
 from ai.orchestrator.schemas import TextEmbeddingResponse
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document, DocumentRagStatus
@@ -14,6 +14,21 @@ from app.rag.chunking import chunk_text
 EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_MODEL_VERSION = "001"
 EMBEDDING_DIMENSIONS = 768
+
+
+async def claim_document(db: AsyncSession, document_id: uuid.UUID) -> bool:
+    """Atomically claim one pending/failed document for indexing."""
+    claimed_id = await db.scalar(
+        update(Document)
+        .where(
+            Document.id == document_id,
+            Document.rag_status.in_([DocumentRagStatus.PENDING, DocumentRagStatus.FAILED]),
+        )
+        .values(rag_status=DocumentRagStatus.INDEXING)
+        .returning(Document.id)
+    )
+    await db.commit()
+    return claimed_id is not None
 
 
 def locator_kind(file_type: str) -> SectionLocatorKind:
@@ -49,7 +64,6 @@ async def build_chunks(db: AsyncSession, document_id: uuid.UUID) -> list[Chunk]:
     document = await db.get(Document, document_id)
     if document is None:
         return []
-    document.rag_status = DocumentRagStatus.INDEXING
     await db.execute(delete(Chunk).where(Chunk.document_id == document_id))
     sections = list(
         await db.scalars(
@@ -83,7 +97,7 @@ async def build_chunks(db: AsyncSession, document_id: uuid.UUID) -> list[Chunk]:
 
 
 async def persist_embeddings(
-    db: AsyncSession, document_id: uuid.UUID, chunks: list[Chunk], response: TextEmbeddingResponse
+    db: AsyncSession, chunks: list[Chunk], response: TextEmbeddingResponse
 ) -> None:
     for chunk, vector in zip(chunks, response.embeddings, strict=True):
         db.add(
@@ -95,9 +109,6 @@ async def persist_embeddings(
                 dimensions=EMBEDDING_DIMENSIONS,
             )
         )
-    document = await db.get(Document, document_id)
-    if document is not None:
-        document.rag_status = DocumentRagStatus.INDEXED
     await db.commit()
 
 

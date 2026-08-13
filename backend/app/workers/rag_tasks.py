@@ -7,7 +7,7 @@ import uuid
 from ai.orchestrator.orchestrator import OrchestrationError, run_task
 from ai.orchestrator.schemas import EmbeddingPurpose, TextEmbeddingRequest
 from ai.orchestrator.task_types import TaskType
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.config import get_settings
 from app.db.session import celery_session_maker
@@ -35,8 +35,13 @@ async def _index_document(document_id: uuid.UUID) -> None:
     if not get_settings().rag_enabled:
         return
     async with celery_session_maker() as db:
-        chunks = await rag_index_service.build_chunks(db, document_id)
+        if not await rag_index_service.claim_document(db, document_id):
+            return
         try:
+            chunks = await rag_index_service.build_chunks(db, document_id)
+            if not chunks:
+                await rag_index_service.mark_failed(db, document_id)
+                return
             for start in range(0, len(chunks), _EMBEDDING_BATCH_SIZE):
                 batch = chunks[start : start + _EMBEDDING_BATCH_SIZE]
                 response = await run_task(
@@ -45,12 +50,12 @@ async def _index_document(document_id: uuid.UUID) -> None:
                         texts=[chunk.text for chunk in batch], purpose=EmbeddingPurpose.DOCUMENT
                     ),
                 )
-                await rag_index_service.persist_embeddings(db, document_id, batch, response)
-        except OrchestrationError:
+                await rag_index_service.persist_embeddings(db, batch, response)
+            await rag_index_service.mark_indexed(db, document_id)
+        except Exception:
+            await db.rollback()
             await rag_index_service.mark_failed(db, document_id)
             raise
-        if not chunks:
-            await rag_index_service.mark_indexed(db, document_id)
 
 
 @celery_app.task(name="rag.backfill_documents")
@@ -67,6 +72,8 @@ async def _backfill_documents(batch_size: int) -> int:
                 select(Document.id)
                 .where(
                     Document.parse_status == DocumentParseStatus.DONE,
+                    Document.extracted_text.is_not(None),
+                    func.length(func.trim(Document.extracted_text)) > 0,
                     Document.rag_status.in_([DocumentRagStatus.PENDING, DocumentRagStatus.FAILED]),
                 )
                 .order_by(Document.created_at)
