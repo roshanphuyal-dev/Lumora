@@ -6,6 +6,7 @@ import uuid
 from ai.orchestrator.orchestrator import OrchestrationError, run_task
 from ai.orchestrator.schemas import (
     Citation,
+    InternetSearchRequest,
     NotebookQueryRequest,
     QuestionItem,
     QuizGenerationRequest,
@@ -113,6 +114,23 @@ async def _generate_quiz(quiz_id: uuid.UUID) -> None:
                 else:
                     context = retrieval.content
                     citations = retrieval.citations
+
+            if quiz.include_web_search:
+                try:
+                    web_result = await run_task(
+                        TaskType.INTERNET_SEARCH,
+                        InternetSearchRequest(query=query),
+                    )
+                except OrchestrationError:
+                    pass
+                else:
+                    if context:
+                        context = (
+                            f"{context}\n\n--- Current web information ---\n{web_result.content}"
+                        )
+                    else:
+                        context = web_result.content
+                    citations = citations + web_result.citations
 
             response = await run_task(
                 TaskType.QUIZ_GENERATION,

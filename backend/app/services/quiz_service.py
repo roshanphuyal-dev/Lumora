@@ -29,6 +29,7 @@ async def create_quiz(
         question_count=payload.question_count,
         difficulty=payload.difficulty,
         time_limit_seconds=payload.time_limit_seconds,
+        include_web_search=payload.include_web_search,
     )
     db.add(quiz)
     await db.commit()

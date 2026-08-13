@@ -2,8 +2,8 @@ import enum
 import uuid
 from typing import TYPE_CHECKING
 
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy import ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -94,6 +94,14 @@ class Quiz(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     time_limit_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Opt-in set at quiz-creation time; read by the generation worker
+    # (app.workers.quiz_tasks) to decide whether to ground question generation with
+    # TaskType.INTERNET_SEARCH results. Persisted (not request-time-only) because
+    # generation is deferred to Celery, which only receives quiz_id and re-reads
+    # params off this row.
+    include_web_search: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     notebook: Mapped["Notebook"] = relationship(back_populates="quizzes")

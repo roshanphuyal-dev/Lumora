@@ -169,6 +169,7 @@ function QuizRow({ quiz, notebookId }: { quiz: QuizRead; notebookId: string }) {
 export function QuizzesSection({ notebookId }: { notebookId: string }) {
   const [selectedTypes, setSelectedTypes] = useState<QuestionType[]>(["mcq"])
   const [typesError, setTypesError] = useState<string | null>(null)
+  const [includeWebSearch, setIncludeWebSearch] = useState(false)
   const quizzesQuery = useQuizzes(notebookId)
   const createMutation = useCreateQuiz(notebookId)
   const { register, handleSubmit, reset, formState: { errors } } = useForm<QuizFormValues>({
@@ -194,6 +195,7 @@ export function QuizzesSection({ notebookId }: { notebookId: string }) {
       question_count: Number(values.questionCount),
       difficulty: values.difficulty,
       time_limit_seconds: values.timeLimit ? Number(values.timeLimit) : undefined,
+      include_web_search: includeWebSearch,
     }
     createMutation.mutate(input, { onSuccess: () => reset() })
   }
@@ -260,6 +262,23 @@ export function QuizzesSection({ notebookId }: { notebookId: string }) {
               })}
             />
             {errors.timeLimit && <p className="text-xs text-destructive" role="alert">{errors.timeLimit.message}</p>}
+          </div>
+        </div>
+
+        <div className="mt-3 flex items-start gap-2">
+          <Checkbox
+            id="quiz-web-search"
+            className="mt-0.5"
+            checked={includeWebSearch}
+            onCheckedChange={(checked) => setIncludeWebSearch(checked === true)}
+          />
+          <div>
+            <Label htmlFor="quiz-web-search" className="text-sm font-normal text-foreground">
+              Include current web results
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Adds current web information to the generated questions, not just this notebook's sources.
+            </p>
           </div>
         </div>
 

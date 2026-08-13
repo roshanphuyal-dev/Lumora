@@ -116,3 +116,38 @@ async def test_create_quiz_requires_owned_notebook(
 
     result = await db_session.scalars(select(Quiz).where(Quiz.notebook_id == notebook.id))
     assert list(result) == []
+
+
+async def test_create_quiz_persists_include_web_search(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """`include_web_search` defaults to `false` and, when set `true` in the request body,
+    persists onto the created `Quiz` row -- the generation worker
+    (`app/workers/quiz_tasks.py::_generate_quiz`) reads it back off the row rather than
+    receiving it directly, since generation is deferred to Celery."""
+    owner_token = await _register(client, "quiz-web-search@example.com")
+    owner = await db_session.scalar(select(User).where(User.email == "quiz-web-search@example.com"))
+    assert owner is not None
+    notebook = Notebook(owner_id=owner.id, name="Current Affairs")
+    db_session.add(notebook)
+    await db_session.commit()
+    await db_session.refresh(notebook)
+    url = f"/api/v1/notebooks/{notebook.id}/quizzes"
+
+    with patch("app.services.quiz_service.generate_quiz_task.delay"):
+        created = await client.post(
+            url,
+            json={
+                "topic": "Recent events",
+                "question_types": ["mcq"],
+                "question_count": 5,
+                "include_web_search": True,
+            },
+            headers=_auth(owner_token),
+        )
+    assert created.status_code == 201
+    assert created.json()["include_web_search"] is True
+
+    quiz = await db_session.scalar(select(Quiz).where(Quiz.id == created.json()["id"]))
+    assert quiz is not None
+    assert quiz.include_web_search is True

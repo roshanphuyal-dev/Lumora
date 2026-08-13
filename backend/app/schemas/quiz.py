@@ -14,6 +14,7 @@ class QuizCreate(BaseModel):
     question_count: int = Field(default=10, ge=1, le=50)
     difficulty: QuizDifficulty = QuizDifficulty.MIXED
     time_limit_seconds: int | None = Field(default=None, ge=1)
+    include_web_search: bool = False
 
     @field_validator("question_types")
     @classmethod
@@ -79,6 +80,7 @@ class QuizRead(BaseModel):
     question_count: int
     difficulty: QuizDifficulty
     time_limit_seconds: int | None
+    include_web_search: bool
     error_message: str | None
     questions: list[QuestionRead] = Field(default_factory=list)
     created_at: datetime

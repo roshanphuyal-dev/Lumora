@@ -40,6 +40,7 @@ export interface QuizRead {
   question_count: number
   difficulty: QuizDifficulty
   time_limit_seconds: number | null
+  include_web_search: boolean
   error_message: string | null
   questions: QuestionRead[]
   created_at: string
@@ -53,6 +54,7 @@ export interface CreateQuizInput {
   question_count: number
   difficulty: QuizDifficulty
   time_limit_seconds?: number
+  include_web_search?: boolean
 }
 
 export function listQuizzes(notebookId: string): Promise<Page<QuizRead>> {

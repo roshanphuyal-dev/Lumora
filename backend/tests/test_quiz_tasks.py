@@ -11,19 +11,28 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 from ai.orchestrator.orchestrator import OrchestrationError
-from ai.orchestrator.schemas import AIResponse, ProviderName
+from ai.orchestrator.schemas import (
+    AIResponse,
+    Citation,
+    InternetSearchRequest,
+    NotebookQueryRequest,
+    ProviderName,
+)
 from ai.orchestrator.task_types import TaskType
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.notebook import Notebook
+from app.models.document import Document, DocumentParseStatus
+from app.models.notebook import Notebook, NotebookSource, NotebookSourceIndexStatus
 from app.models.quiz import Question, Quiz, QuizDifficulty, QuizStatus
 from app.models.user import User
 from app.workers.quiz_tasks import _generate_quiz
 from tests.conftest import TestSessionLocal
 
 
-async def _user_notebook_quiz(db: AsyncSession, email: str) -> tuple[Notebook, Quiz]:
+async def _user_notebook_quiz(
+    db: AsyncSession, email: str, *, include_web_search: bool = False
+) -> tuple[Notebook, Quiz]:
     user = User(email=email, full_name="Test User")
     db.add(user)
     await db.flush()
@@ -38,6 +47,7 @@ async def _user_notebook_quiz(db: AsyncSession, email: str) -> tuple[Notebook, Q
         question_types=["mcq", "matching", "fill_blank", "case_study"],
         question_count=4,
         difficulty=QuizDifficulty.MIXED,
+        include_web_search=include_web_search,
     )
     db.add(quiz)
     await db.commit()
@@ -299,3 +309,156 @@ async def test_generate_quiz_returns_early_for_missing_quiz(db_session: AsyncSes
     ):
         await _generate_quiz(missing_id)
     run_task.assert_not_awaited()
+
+
+async def test_generate_quiz_with_web_search_merges_context_and_citations(
+    db_session: AsyncSession,
+) -> None:
+    """`include_web_search=True` on a notebook with an indexed source: both
+    `TaskType.NOTEBOOK_QUERY` and `TaskType.INTERNET_SEARCH` run, and the web result's
+    content is appended to the notebook context behind a clear separator (rather than
+    overwriting it), with both sets of citations merged for `TaskType.QUIZ_GENERATION`."""
+    user = User(email="quiz-web-search@example.com", full_name="Test User")
+    db_session.add(user)
+    await db_session.flush()
+    notebook = Notebook(owner_id=user.id, name="Biology", notebooklm_notebook_id="remote-notebook")
+    db_session.add(notebook)
+    await db_session.flush()
+    document = Document(
+        uploaded_by=user.id,
+        filename="biology.pdf",
+        storage_path="documents/biology.pdf",
+        mime_type="application/pdf",
+        file_type="pdf",
+        parse_status=DocumentParseStatus.DONE,
+    )
+    db_session.add(document)
+    await db_session.flush()
+    db_session.add(
+        NotebookSource(
+            notebook_id=notebook.id,
+            document_id=document.id,
+            indexing_status=NotebookSourceIndexStatus.INDEXED,
+        )
+    )
+    quiz = Quiz(
+        notebook_id=notebook.id,
+        user_id=user.id,
+        title="Cell Biology",
+        topic="Cells",
+        question_types=["mcq"],
+        question_count=1,
+        difficulty=QuizDifficulty.MIXED,
+        include_web_search=True,
+    )
+    db_session.add(quiz)
+    await db_session.commit()
+    await db_session.refresh(quiz)
+
+    notebook_citation = Citation(source_id="notebook-1", excerpt="from the notebook")
+    web_citation = Citation(source_id="web-1", excerpt="from the web")
+    quiz_generation_requests: list[object] = []
+
+    async def _fake_run_task(task_type: TaskType, request: object) -> AIResponse:
+        if task_type is TaskType.NOTEBOOK_QUERY:
+            assert isinstance(request, NotebookQueryRequest)
+            return AIResponse(
+                task_type=TaskType.NOTEBOOK_QUERY,
+                provider=ProviderName.GEMINI,
+                content="Notebook material about cells.",
+                citations=[notebook_citation],
+            )
+        if task_type is TaskType.INTERNET_SEARCH:
+            assert isinstance(request, InternetSearchRequest)
+            assert request.query == "Cells"  # quiz.topic or quiz.title, untouched
+            return AIResponse(
+                task_type=TaskType.INTERNET_SEARCH,
+                provider=ProviderName.GEMINI,
+                content="Recent web synthesis about cells.",
+                citations=[web_citation],
+            )
+        if task_type is TaskType.QUIZ_GENERATION:
+            quiz_generation_requests.append(request)
+            return AIResponse(
+                task_type=TaskType.QUIZ_GENERATION,
+                provider=ProviderName.GEMINI,
+                content="[]",
+            )
+        raise AssertionError(f"unexpected task_type {task_type}")
+
+    with (
+        patch("app.workers.quiz_tasks.celery_session_maker", TestSessionLocal),
+        patch("app.workers.quiz_tasks.run_task", side_effect=_fake_run_task),
+    ):
+        await _generate_quiz(quiz.id)
+
+    await db_session.refresh(quiz)
+    assert quiz.status is QuizStatus.DONE
+    (generation_request,) = quiz_generation_requests
+    assert generation_request.context == (
+        "Notebook material about cells.\n\n--- Current web information ---"
+        "\nRecent web synthesis about cells."
+    )
+    assert generation_request.citations == [notebook_citation, web_citation]
+
+
+async def test_generate_quiz_without_web_search_never_calls_internet_search(
+    db_session: AsyncSession,
+) -> None:
+    """`include_web_search=False` (the default) must never dispatch `TaskType.INTERNET_SEARCH`."""
+    notebook, quiz = await _user_notebook_quiz(
+        db_session, "quiz-no-web-search@example.com", include_web_search=False
+    )
+    response = AIResponse(
+        task_type=TaskType.QUIZ_GENERATION,
+        provider=ProviderName.GEMINI,
+        content="[]",
+    )
+    run_task = AsyncMock(return_value=response)
+
+    with (
+        patch("app.workers.quiz_tasks.celery_session_maker", TestSessionLocal),
+        patch("app.workers.quiz_tasks.run_task", run_task),
+    ):
+        await _generate_quiz(quiz.id)
+
+    await db_session.refresh(quiz)
+    assert quiz.status is QuizStatus.DONE
+    called_task_types = [call.args[0] for call in run_task.await_args_list]
+    assert TaskType.INTERNET_SEARCH not in called_task_types
+
+
+async def test_generate_quiz_web_search_failure_does_not_block_generation(
+    db_session: AsyncSession,
+) -> None:
+    """A `TaskType.INTERNET_SEARCH` failure is swallowed exactly like a `NOTEBOOK_QUERY`
+    failure -- quiz generation still proceeds with whatever context exists (empty, here,
+    since there's no indexed notebook source either), not marked `FAILED`."""
+    notebook, quiz = await _user_notebook_quiz(
+        db_session, "quiz-web-search-fails@example.com", include_web_search=True
+    )
+    quiz_generation_requests: list[object] = []
+
+    async def _fake_run_task(task_type: TaskType, request: object) -> AIResponse:
+        if task_type is TaskType.INTERNET_SEARCH:
+            raise OrchestrationError("INTERNET_SEARCH failed: provider timeout")
+        if task_type is TaskType.QUIZ_GENERATION:
+            quiz_generation_requests.append(request)
+            return AIResponse(
+                task_type=TaskType.QUIZ_GENERATION,
+                provider=ProviderName.GEMINI,
+                content="[]",
+            )
+        raise AssertionError(f"unexpected task_type {task_type}")
+
+    with (
+        patch("app.workers.quiz_tasks.celery_session_maker", TestSessionLocal),
+        patch("app.workers.quiz_tasks.run_task", side_effect=_fake_run_task),
+    ):
+        await _generate_quiz(quiz.id)
+
+    await db_session.refresh(quiz)
+    assert quiz.status is QuizStatus.DONE
+    (generation_request,) = quiz_generation_requests
+    assert generation_request.context == ""
+    assert generation_request.citations == []
