@@ -83,3 +83,18 @@ class TaskType(enum.StrEnum):
     # through -- pedagogical judgment and citation handling stay centralized in the
     # orchestration layer, same reasoning as NOTEBOOK_QUERY feeding TEACHING_EXPLANATION.
     INTERNET_SEARCH = "internet_search"
+
+    # Research-paper/academic-literature question -> arXiv search first, Semantic Scholar
+    # as an optional fallback only if SEMANTIC_SCHOLAR_API_KEY is configured, then Gemini
+    # synthesizes a cited student-facing answer from the normalized paper metadata (ADR
+    # 0013, docs/adr/0013-paper-search-integration.md). Identical shape to
+    # INTERNET_SEARCH -- same synthesis-pass reasoning, never a provider summary passed
+    # straight through -- kept as its own task type rather than folded into
+    # INTERNET_SEARCH since the provider set, result schema (authors/abstract/venue/
+    # citation_count), and per-provider caching/rate-limit rules are all distinct.
+    PAPER_SEARCH = "paper_search"
+
+    # Batched document/query vectorization -> Gemini Embeddings. The request carries the
+    # retrieval purpose so the provider can optimize document and query vectors correctly;
+    # feature code still declares only this provider-neutral task type.
+    TEXT_EMBEDDING = "text_embedding"

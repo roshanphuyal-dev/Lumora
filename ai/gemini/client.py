@@ -42,6 +42,13 @@ from ai.prompts.internet_search_synthesis_v1 import (
 )
 from ai.prompts.note_generation_v1 import SYSTEM_PROMPT as NOTE_SYSTEM_PROMPT
 from ai.prompts.note_generation_v1 import render_user_prompt as render_note_prompt
+from ai.prompts.paper_search_synthesis_v1 import (
+    SYSTEM_PROMPT as PAPER_SEARCH_SYSTEM_PROMPT,
+)
+from ai.prompts.paper_search_synthesis_v1 import PaperResultItemInput
+from ai.prompts.paper_search_synthesis_v1 import (
+    render_user_prompt as render_paper_search_prompt,
+)
 from ai.prompts.quiz_generation_v1 import SYSTEM_PROMPT as QUIZ_SYSTEM_PROMPT
 from ai.prompts.quiz_generation_v1 import render_user_prompt as render_quiz_prompt
 from ai.prompts.quiz_grading_v1 import SYSTEM_PROMPT as QUIZ_GRADING_SYSTEM_PROMPT
@@ -56,6 +63,13 @@ from ai.prompts.structured_note_generation_v1 import (
 from ai.prompts.teaching_explanation_v1 import SYSTEM_PROMPT, render_user_prompt
 
 _MODEL_NAME = "gemini-3.5-flash"
+EMBEDDING_MODEL_NAME = "gemini-embedding-001"
+EMBEDDING_DIMENSIONS = 768
+
+_EMBEDDING_TASK_TYPES = {
+    "retrieval_document": "RETRIEVAL_DOCUMENT",
+    "retrieval_query": "RETRIEVAL_QUERY",
+}
 
 
 class _FlashcardCitationSchema(BaseModel):
@@ -160,7 +174,7 @@ class _GradeResultListSchema(RootModel[list[_QuestionGradeResultSchema]]):
 
 
 class GeminiError(RuntimeError):
-    """Raised when the Gemini API call fails, is misconfigured, or returns no usable text."""
+    """Raised when Gemini fails, is misconfigured, or returns unusable output."""
 
 
 class GeminiClient:
@@ -171,6 +185,38 @@ class GeminiClient:
         if not resolved_key:
             raise GeminiError("GEMINI_API_KEY is not configured (see backend/.env.example).")
         self._client = genai.Client(api_key=resolved_key)
+
+    async def embed_texts(self, *, texts: list[str], purpose: str) -> list[list[float]]:
+        """Embed one batch with the fixed Phase 4 model and 768-dimensional output."""
+        try:
+            provider_task_type = _EMBEDDING_TASK_TYPES[purpose]
+        except KeyError as exc:
+            raise GeminiError(f"Unsupported embedding purpose: {purpose}.") from exc
+
+        try:
+            response = await self._client.aio.models.embed_content(
+                model=EMBEDDING_MODEL_NAME,
+                contents=texts,
+                config=types.EmbedContentConfig(
+                    task_type=provider_task_type,
+                    output_dimensionality=EMBEDDING_DIMENSIONS,
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 - normalize provider failures
+            raise GeminiError(f"Gemini embedding failed: {exc}") from exc
+
+        provider_embeddings = response.embeddings or []
+        embeddings = [embedding.values or [] for embedding in provider_embeddings]
+        if len(embeddings) != len(texts):
+            raise GeminiError(
+                "Gemini returned an unexpected number of embeddings "
+                f"({len(embeddings)} for {len(texts)} texts)."
+            )
+        if any(len(embedding) != EMBEDDING_DIMENSIONS for embedding in embeddings):
+            raise GeminiError(
+                f"Gemini returned an embedding with dimensions other than {EMBEDDING_DIMENSIONS}."
+            )
+        return embeddings
 
     async def generate_teaching_explanation(self, question: str, context: str = "") -> str:
         """Ask Gemini to explain `question`, optionally grounded in `context`.
@@ -376,6 +422,30 @@ class GeminiClient:
             raise GeminiError(f"Gemini internet search synthesis failed: {exc}") from exc
         if not response.text:
             raise GeminiError("Gemini returned an empty internet search synthesis.")
+        return response.text
+
+    async def generate_paper_search_synthesis(
+        self, *, question: str, results: list[PaperResultItemInput]
+    ) -> str:
+        """Synthesize a cited, student-facing answer from normalized academic paper
+        search results.
+
+        `results` are untrusted external content, treated strictly as source material by
+        the prompt template (`ai/prompts/paper_search_synthesis_v1.py`), never as
+        instructions -- never a provider's own summarization mode passed straight through
+        (ADR 0013).
+        """
+        user_prompt = render_paper_search_prompt(question=question, results=results)
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=_MODEL_NAME,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(system_instruction=PAPER_SEARCH_SYSTEM_PROMPT),
+            )
+        except Exception as exc:  # noqa: BLE001 - normalize provider failures
+            raise GeminiError(f"Gemini paper search synthesis failed: {exc}") from exc
+        if not response.text:
+            raise GeminiError("Gemini returned an empty paper search synthesis.")
         return response.text
 
     async def stream_chat_response(

@@ -46,6 +46,34 @@ class AIResponse(BaseModel):
     metadata: dict[str, str] = Field(default_factory=dict)
 
 
+class EmbeddingPurpose(enum.StrEnum):
+    """How a batch of text will be used by retrieval."""
+
+    DOCUMENT = "retrieval_document"
+    QUERY = "retrieval_query"
+
+
+class TextEmbeddingRequest(BaseModel):
+    """A non-empty batch of texts to embed for document indexing or query retrieval."""
+
+    texts: list[str] = Field(min_length=1)
+    purpose: EmbeddingPurpose
+
+
+class TextEmbeddingResponse(BaseModel):
+    """Normalized vector response for `TaskType.TEXT_EMBEDDING`.
+
+    Kept separate from `AIResponse`: vectors are typed numeric data, not prose that should
+    be serialized into `AIResponse.content` and parsed again by callers.
+    """
+
+    task_type: TaskType
+    provider: ProviderName
+    embeddings: list[list[float]]
+    model: str
+    dimensions: int
+
+
 class DocumentIndexRequest(BaseModel):
     """Input for `TaskType.DOCUMENT_INDEX` — one already-uploaded local file to index.
 
@@ -389,6 +417,20 @@ class InternetSearchRequest(BaseModel):
     No `citations` field, unlike most other request types here: citations are derived from
     the search results themselves (`ai/orchestrator/orchestrator.py:_run_internet_search`
     builds them from `InternetSearchItem.url`), not supplied by the caller.
+    """
+
+    query: str
+    max_results: int = 5
+
+
+class PaperSearchRequest(BaseModel):
+    """Input for `TaskType.PAPER_SEARCH` — a student's research question needing academic
+    literature grounding (ADR 0013, `docs/adr/0013-paper-search-integration.md`).
+
+    Same shape/reasoning as `InternetSearchRequest` — no `citations` field, since citations
+    are derived from the paper results themselves
+    (`ai/orchestrator/orchestrator.py:_run_paper_search` builds them from
+    `PaperSearchItem.url`), not supplied by the caller.
     """
 
     query: str

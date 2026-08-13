@@ -38,18 +38,25 @@ from ai.orchestrator.schemas import (
     AIResponse,
     Citation,
     DocumentIndexRequest,
+    EmbeddingPurpose,
     GradingItem,
     InternetSearchRequest,
     NotebookQueryRequest,
+    PaperSearchRequest,
     ProviderName,
     QuestionItem,
     QuizGenerationRequest,
     QuizGradingRequest,
     TeachingExplanationRequest,
+    TextEmbeddingRequest,
+    TextEmbeddingResponse,
     TopicImageResult,
     TopicImageSearchRequest,
 )
 from ai.orchestrator.task_types import TaskType
+from ai.paper_search.arxiv_client import ArxivClient, ArxivError
+from ai.paper_search.schemas import PaperSearchItem, PaperSearchProvider, PaperSearchResult
+from ai.paper_search.semantic_scholar_client import SemanticScholarClient, SemanticScholarError
 from pydantic import TypeAdapter
 
 
@@ -105,6 +112,51 @@ async def test_teaching_explanation_routes_to_gemini() -> None:
     assert response.content == "A derivative is a rate of change."
     # Citations carried through end-to-end (.claude/rules/ai.md).
     assert response.citations == request.citations
+
+
+@pytest.mark.parametrize("purpose", list(EmbeddingPurpose))
+async def test_text_embedding_routes_batch_to_gemini(purpose: EmbeddingPurpose) -> None:
+    mock_client = AsyncMock(spec=GeminiClient)
+    mock_client.embed_texts.return_value = [[0.1] * 768, [0.2] * 768]
+    request = TextEmbeddingRequest(texts=["first chunk", "second chunk"], purpose=purpose)
+
+    response = await run_task(TaskType.TEXT_EMBEDDING, request, gemini_client=mock_client)
+
+    mock_client.embed_texts.assert_awaited_once_with(
+        texts=request.texts,
+        purpose=purpose.value,
+    )
+    assert isinstance(response, TextEmbeddingResponse)
+    assert response.task_type is TaskType.TEXT_EMBEDDING
+    assert response.provider is ProviderName.GEMINI
+    assert response.model == "gemini-embedding-001"
+    assert response.dimensions == 768
+    assert response.embeddings == mock_client.embed_texts.return_value
+
+
+async def test_text_embedding_rejects_wrong_request_shape() -> None:
+    mock_client = AsyncMock(spec=GeminiClient)
+
+    with pytest.raises(OrchestrationError, match="TEXT_EMBEDDING requires a TextEmbeddingRequest"):
+        await run_task(
+            TaskType.TEXT_EMBEDDING,
+            _teaching_explanation_request(),
+            gemini_client=mock_client,
+        )
+
+    mock_client.embed_texts.assert_not_awaited()
+
+
+async def test_text_embedding_wraps_gemini_failure() -> None:
+    mock_client = AsyncMock(spec=GeminiClient)
+    mock_client.embed_texts.side_effect = GeminiError("quota exhausted")
+
+    with pytest.raises(OrchestrationError, match="quota exhausted"):
+        await run_task(
+            TaskType.TEXT_EMBEDDING,
+            TextEmbeddingRequest(texts=["chunk"], purpose=EmbeddingPurpose.DOCUMENT),
+            gemini_client=mock_client,
+        )
 
 
 def _notebook_query_request() -> NotebookQueryRequest:
@@ -854,3 +906,260 @@ async def test_internet_search_rejects_mismatched_request_type() -> None:
         )
 
     tavily_mock.search.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# PAPER_SEARCH (ADR 0013) -- arXiv primary, Semantic Scholar optional fallback, Gemini
+# synthesis. Identical shape to INTERNET_SEARCH above.
+# ---------------------------------------------------------------------------
+
+
+def _paper_search_request() -> PaperSearchRequest:
+    return PaperSearchRequest(query="transformer attention mechanisms", max_results=3)
+
+
+def _paper_result(
+    provider: PaperSearchProvider, *, items: tuple[PaperSearchItem, ...] | None = None
+) -> PaperSearchResult:
+    default_items = (
+        PaperSearchItem(
+            title="Attention Is All You Need",
+            authors=("A. Vaswani",),
+            abstract="We propose the Transformer, a novel architecture.",
+            url="https://arxiv.org/abs/1706.03762",
+        ),
+    )
+    return PaperSearchResult(
+        query="transformer attention mechanisms",
+        normalized_query="transformer attention mechanisms",
+        provider=provider,
+        results=default_items if items is None else items,
+        fetched_at=datetime.now(UTC),
+    )
+
+
+def _bypassed_paper_search_cache(*, cached_result: PaperSearchResult | None = None):
+    """Patch the orchestrator's cache seam so PAPER_SEARCH tests don't depend on a real
+    Redis instance being reachable -- `ai/paper_search/cache.py` is unit-tested separately
+    (`backend/tests/test_paper_search_cache.py`)."""
+    return (
+        patch(
+            "ai.orchestrator.orchestrator.get_cached_paper_search_result",
+            AsyncMock(return_value=cached_result),
+        ),
+        patch(
+            "ai.orchestrator.orchestrator.set_cached_paper_search_result",
+            AsyncMock(return_value=None),
+        ),
+    )
+
+
+async def test_paper_search_routes_to_arxiv_then_gemini_synthesizes() -> None:
+    arxiv_mock = AsyncMock(spec=ArxivClient)
+    arxiv_mock.search.return_value = _paper_result(PaperSearchProvider.ARXIV)
+    gemini_mock = AsyncMock(spec=GeminiClient)
+    gemini_mock.generate_paper_search_synthesis.return_value = (
+        "The Transformer architecture replaced recurrence with attention "
+        "(source: https://arxiv.org/abs/1706.03762)."
+    )
+
+    request = _paper_search_request()
+    get_cache_patch, set_cache_patch = _bypassed_paper_search_cache()
+    with get_cache_patch, set_cache_patch as set_cache_mock:
+        response = await run_task(
+            TaskType.PAPER_SEARCH,
+            request,
+            arxiv_client=arxiv_mock,
+            gemini_client=gemini_mock,
+        )
+
+    arxiv_mock.search.assert_awaited_once_with(request.query, max_results=request.max_results)
+    set_cache_mock.assert_awaited_once()
+    gemini_mock.generate_paper_search_synthesis.assert_awaited_once_with(
+        question=request.query,
+        results=[
+            {
+                "title": "Attention Is All You Need",
+                "authors": ["A. Vaswani"],
+                "venue": None,
+                "abstract": "We propose the Transformer, a novel architecture.",
+                "url": "https://arxiv.org/abs/1706.03762",
+            }
+        ],
+    )
+    assert response.task_type == TaskType.PAPER_SEARCH
+    assert response.provider == ProviderName.GEMINI
+    assert response.content.startswith("The Transformer architecture")
+    assert response.citations == [
+        Citation(
+            source_id="https://arxiv.org/abs/1706.03762",
+            excerpt="We propose the Transformer, a novel architecture.",
+        )
+    ]
+    assert response.metadata == {"search_provider": "arxiv"}
+
+
+async def test_paper_search_empty_arxiv_result_flows_to_synthesis_not_fallback() -> None:
+    """ADR 0013's core empty-result-semantics regression test: an arXiv call that succeeds
+    with zero papers is not a failure and must not trigger a Semantic Scholar fallback
+    attempt -- the empty result flows straight into Gemini synthesis, mirroring
+    `_run_internet_search`'s documented behavior exactly."""
+    arxiv_mock = AsyncMock(spec=ArxivClient)
+    arxiv_mock.search.return_value = _paper_result(PaperSearchProvider.ARXIV, items=())
+    gemini_mock = AsyncMock(spec=GeminiClient)
+    gemini_mock.generate_paper_search_synthesis.return_value = (
+        "I couldn't find any papers matching that question."
+    )
+
+    request = _paper_search_request()
+    get_cache_patch, set_cache_patch = _bypassed_paper_search_cache()
+    with (
+        get_cache_patch,
+        set_cache_patch as set_cache_mock,
+        patch.dict("os.environ", {"SEMANTIC_SCHOLAR_API_KEY": "ss-test-key"}),
+        patch(
+            "ai.orchestrator.orchestrator.SemanticScholarClient",
+            side_effect=AssertionError(
+                "SemanticScholarClient must never be constructed after an arXiv success, "
+                "even an empty one (ADR 0013 empty-result semantics)"
+            ),
+        ),
+    ):
+        response = await run_task(
+            TaskType.PAPER_SEARCH,
+            request,
+            arxiv_client=arxiv_mock,
+            gemini_client=gemini_mock,
+        )
+
+    arxiv_mock.search.assert_awaited_once()
+    set_cache_mock.assert_awaited_once()
+    gemini_mock.generate_paper_search_synthesis.assert_awaited_once_with(
+        question=request.query, results=[]
+    )
+    assert response.metadata == {"search_provider": "arxiv"}
+    assert response.citations == []
+
+
+async def test_paper_search_uses_cached_arxiv_result_without_calling_arxiv() -> None:
+    arxiv_mock = AsyncMock(spec=ArxivClient)
+    gemini_mock = AsyncMock(spec=GeminiClient)
+    gemini_mock.generate_paper_search_synthesis.return_value = "answer"
+
+    request = _paper_search_request()
+    get_cache_patch, set_cache_patch = _bypassed_paper_search_cache(
+        cached_result=_paper_result(PaperSearchProvider.ARXIV)
+    )
+    with get_cache_patch, set_cache_patch as set_cache_mock:
+        response = await run_task(
+            TaskType.PAPER_SEARCH,
+            request,
+            arxiv_client=arxiv_mock,
+            gemini_client=gemini_mock,
+        )
+
+    arxiv_mock.search.assert_not_awaited()
+    set_cache_mock.assert_not_awaited()  # already cached, no need to re-cache
+    assert response.metadata == {"search_provider": "arxiv"}
+
+
+async def test_paper_search_falls_back_to_semantic_scholar_when_arxiv_fails(monkeypatch) -> None:
+    monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "ss-test-key")
+    arxiv_mock = AsyncMock(spec=ArxivClient)
+    arxiv_mock.search.side_effect = ArxivError("arXiv unreachable")
+    semantic_scholar_mock = AsyncMock(spec=SemanticScholarClient)
+    semantic_scholar_mock.search.return_value = _paper_result(PaperSearchProvider.SEMANTIC_SCHOLAR)
+    gemini_mock = AsyncMock(spec=GeminiClient)
+    gemini_mock.generate_paper_search_synthesis.return_value = "answer"
+
+    request = _paper_search_request()
+    get_cache_patch, set_cache_patch = _bypassed_paper_search_cache()
+    with get_cache_patch, set_cache_patch as set_cache_mock:
+        response = await run_task(
+            TaskType.PAPER_SEARCH,
+            request,
+            arxiv_client=arxiv_mock,
+            semantic_scholar_client=semantic_scholar_mock,
+            gemini_client=gemini_mock,
+        )
+
+    semantic_scholar_mock.search.assert_awaited_once_with(
+        request.query, max_results=request.max_results
+    )
+    assert response.metadata == {"search_provider": "semantic_scholar"}
+    # Semantic Scholar results are never cached (ADR 0013) -- only arXiv's success caches.
+    set_cache_mock.assert_not_awaited()
+
+
+async def test_paper_search_skips_semantic_scholar_when_not_configured(monkeypatch) -> None:
+    """No `SEMANTIC_SCHOLAR_API_KEY` -> an arXiv failure is final, never a silent Semantic
+    Scholar attempt (ADR 0013's Consequences)."""
+    monkeypatch.delenv("SEMANTIC_SCHOLAR_API_KEY", raising=False)
+    arxiv_mock = AsyncMock(spec=ArxivClient)
+    arxiv_mock.search.side_effect = ArxivError("arXiv unreachable")
+
+    request = _paper_search_request()
+    get_cache_patch, set_cache_patch = _bypassed_paper_search_cache()
+    with (
+        get_cache_patch,
+        set_cache_patch,
+        patch(
+            "ai.orchestrator.orchestrator.SemanticScholarClient",
+            side_effect=AssertionError(
+                "SemanticScholarClient must never be constructed when "
+                "SEMANTIC_SCHOLAR_API_KEY is unset"
+            ),
+        ),
+    ):
+        with pytest.raises(OrchestrationError, match="arXiv unreachable"):
+            await run_task(TaskType.PAPER_SEARCH, request, arxiv_client=arxiv_mock)
+
+
+async def test_paper_search_raises_when_both_providers_fail(monkeypatch) -> None:
+    monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "ss-test-key")
+    arxiv_mock = AsyncMock(spec=ArxivClient)
+    arxiv_mock.search.side_effect = ArxivError("arxiv down")
+    semantic_scholar_mock = AsyncMock(spec=SemanticScholarClient)
+    semantic_scholar_mock.search.side_effect = SemanticScholarError("semantic scholar down")
+
+    request = _paper_search_request()
+    get_cache_patch, set_cache_patch = _bypassed_paper_search_cache()
+    with get_cache_patch, set_cache_patch:
+        with pytest.raises(OrchestrationError, match="arxiv down") as exc_info:
+            await run_task(
+                TaskType.PAPER_SEARCH,
+                request,
+                arxiv_client=arxiv_mock,
+                semantic_scholar_client=semantic_scholar_mock,
+            )
+
+    assert "semantic scholar down" in str(exc_info.value)
+
+
+async def test_paper_search_wraps_gemini_synthesis_error() -> None:
+    arxiv_mock = AsyncMock(spec=ArxivClient)
+    arxiv_mock.search.return_value = _paper_result(PaperSearchProvider.ARXIV)
+    gemini_mock = AsyncMock(spec=GeminiClient)
+    gemini_mock.generate_paper_search_synthesis.side_effect = GeminiError("synthesis failed")
+
+    request = _paper_search_request()
+    get_cache_patch, set_cache_patch = _bypassed_paper_search_cache()
+    with get_cache_patch, set_cache_patch:
+        with pytest.raises(OrchestrationError, match="synthesis failed"):
+            await run_task(
+                TaskType.PAPER_SEARCH,
+                request,
+                arxiv_client=arxiv_mock,
+                gemini_client=gemini_mock,
+            )
+
+
+async def test_paper_search_rejects_mismatched_request_type() -> None:
+    arxiv_mock = AsyncMock(spec=ArxivClient)
+
+    with pytest.raises(OrchestrationError, match="PaperSearchRequest"):
+        await run_task(
+            TaskType.PAPER_SEARCH, _teaching_explanation_request(), arxiv_client=arxiv_mock
+        )
+
+    arxiv_mock.search.assert_not_awaited()

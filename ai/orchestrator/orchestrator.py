@@ -2,8 +2,9 @@
 
 This is the *only* place feature code talks to a model provider. It receives a
 `task_type` + a request, decides which provider handles it per the Routing Logic order
-in `docs/AI.md#routing-logic`, and returns a normalized `AIResponse`
-(`ai/orchestrator/schemas.py`). Feature code (backend services, Celery tasks, etc.)
+in `docs/AI.md#routing-logic`, and returns a normalized task response (`AIResponse` for
+content, `TextEmbeddingResponse` for vectors; `ai/orchestrator/schemas.py`). Feature code
+(backend services, Celery tasks, etc.)
 imports `run_task` from this module and never imports a provider SDK directly
 (.claude/rules/ai.md).
 
@@ -28,7 +29,12 @@ from collections.abc import AsyncIterator
 
 from pydantic import TypeAdapter, ValidationError
 
-from ai.gemini.client import GeminiClient, GeminiError
+from ai.gemini.client import (
+    EMBEDDING_DIMENSIONS,
+    EMBEDDING_MODEL_NAME,
+    GeminiClient,
+    GeminiError,
+)
 from ai.image_search.client import (
     OpenverseClient,
     OpenverseError,
@@ -53,6 +59,7 @@ from ai.orchestrator.schemas import (
     InternetSearchRequest,
     NotebookQueryRequest,
     NotesGenerationRequest,
+    PaperSearchRequest,
     ProviderName,
     QuestionGradeResult,
     QuestionItem,
@@ -61,10 +68,19 @@ from ai.orchestrator.schemas import (
     StructuredNoteGenerationRequest,
     StudioArtifactCreateRequest,
     TeachingExplanationRequest,
+    TextEmbeddingRequest,
+    TextEmbeddingResponse,
     TopicImageResult,
     TopicImageSearchRequest,
 )
 from ai.orchestrator.task_types import TaskType
+from ai.paper_search.arxiv_client import ArxivClient, ArxivError
+from ai.paper_search.cache import (
+    get_cached_paper_search_result,
+    set_cached_paper_search_result,
+)
+from ai.paper_search.schemas import PaperSearchProvider, PaperSearchResult
+from ai.paper_search.semantic_scholar_client import SemanticScholarClient, SemanticScholarError
 
 TaskRequest = (
     DocumentIndexRequest
@@ -79,7 +95,11 @@ TaskRequest = (
     | QuizGradingRequest
     | TopicImageSearchRequest
     | InternetSearchRequest
+    | PaperSearchRequest
+    | TextEmbeddingRequest
 )
+
+TaskResponse = AIResponse | TextEmbeddingResponse
 
 
 class OrchestrationError(RuntimeError):
@@ -97,13 +117,15 @@ async def run_task(
     openverse_client: OpenverseClient | None = None,
     tavily_client: TavilyClient | None = None,
     brave_client: BraveClient | None = None,
-) -> AIResponse:
-    """Route `request` to the provider `task_type` maps to and return a normalized response.
+    arxiv_client: ArxivClient | None = None,
+    semantic_scholar_client: SemanticScholarClient | None = None,
+) -> TaskResponse:
+    """Route `request` to its provider and return the task's normalized response shape.
 
     `gemini_client`/`notebooklm_client`/`opencode_zen_client`/`wikimedia_client`/
-    `openverse_client`/`tavily_client`/`brave_client` are optional seams for tests —
-    feature code should leave them unset and let the orchestrator construct the real
-    provider client.
+    `openverse_client`/`tavily_client`/`brave_client`/`arxiv_client`/
+    `semantic_scholar_client` are optional seams for tests — feature code should leave them
+    unset and let the orchestrator construct the real provider client.
     """
     if task_type is TaskType.DOCUMENT_INDEX:
         if not isinstance(request, DocumentIndexRequest):
@@ -164,7 +186,39 @@ async def run_task(
             raise OrchestrationError("INTERNET_SEARCH requires an InternetSearchRequest.")
         return await _run_internet_search(request, tavily_client, brave_client, gemini_client)
 
+    if task_type is TaskType.TEXT_EMBEDDING:
+        if not isinstance(request, TextEmbeddingRequest):
+            raise OrchestrationError("TEXT_EMBEDDING requires a TextEmbeddingRequest.")
+        return await _run_text_embedding(request, gemini_client)
+
+    if task_type is TaskType.PAPER_SEARCH:
+        if not isinstance(request, PaperSearchRequest):
+            raise OrchestrationError("PAPER_SEARCH requires a PaperSearchRequest.")
+        return await _run_paper_search(
+            request, arxiv_client, semantic_scholar_client, gemini_client
+        )
+
     raise OrchestrationError(f"No routing rule for task_type={task_type!r}.")
+
+
+async def _run_text_embedding(
+    request: TextEmbeddingRequest, gemini_client: GeminiClient | None
+) -> TextEmbeddingResponse:
+    try:
+        embeddings = await (gemini_client or GeminiClient()).embed_texts(
+            texts=request.texts,
+            purpose=request.purpose.value,
+        )
+    except GeminiError as exc:
+        raise OrchestrationError(str(exc)) from exc
+
+    return TextEmbeddingResponse(
+        task_type=TaskType.TEXT_EMBEDDING,
+        provider=ProviderName.GEMINI,
+        embeddings=embeddings,
+        model=EMBEDDING_MODEL_NAME,
+        dimensions=EMBEDDING_DIMENSIONS,
+    )
 
 
 async def stream_task(
@@ -694,6 +748,88 @@ async def _run_internet_search(
         provider=ProviderName.GEMINI,
         content=answer,
         citations=[Citation(source_id=item.url, excerpt=item.snippet) for item in result.results],
+        metadata={"search_provider": result.provider.value},
+    )
+
+
+async def _run_paper_search(
+    request: PaperSearchRequest,
+    arxiv_client: ArxivClient | None,
+    semantic_scholar_client: SemanticScholarClient | None,
+    gemini_client: GeminiClient | None,
+) -> AIResponse:
+    """arXiv first, Semantic Scholar fallback only if `SEMANTIC_SCHOLAR_API_KEY` is
+    configured, then Gemini synthesizes the final answer (ADR 0013).
+
+    Identical shape to `_run_internet_search` -- see that function's docstring for the
+    shared reasoning (never returns a provider's raw paper metadata directly; the
+    normalized `PaperSearchResult` is always handed to Gemini's synthesis prompt,
+    `ai/prompts/paper_search_synthesis_v1.py`, so pedagogical judgment and citation
+    handling stay centralized here rather than provider-dependent).
+
+    Empty-result semantics deliberately match `_run_internet_search` exactly (ADR 0013): an
+    arXiv call that succeeds with zero papers found is not treated as a failure and does
+    not by itself trigger the Semantic Scholar fallback -- only a raised `ArxivError` does.
+    The empty `PaperSearchResult` still flows straight into Gemini synthesis like any other
+    success, same as a non-empty one.
+
+    arXiv results are read through a 24h cache (`ai/paper_search/cache.py`) keyed on the
+    normalized query + provider + `max_results`, per arXiv's own once-per-day-is-enough
+    caching guidance; Semantic Scholar results are never cached at all, per its license
+    terms (ADR 0013's per-provider caching asymmetry). Semantic Scholar is only attempted
+    when `SEMANTIC_SCHOLAR_API_KEY` is configured -- an arXiv failure with no Semantic
+    Scholar key configured is a final "search unavailable" outcome, not a silent skip
+    (ADR 0013's Consequences, mirroring ADR 0012's for Brave).
+    """
+    errors: list[str] = []
+    result: PaperSearchResult | None = await get_cached_paper_search_result(
+        provider=PaperSearchProvider.ARXIV,
+        query=request.query,
+        max_results=request.max_results,
+    )
+
+    if result is None:
+        try:
+            result = await (arxiv_client or ArxivClient()).search(
+                request.query, max_results=request.max_results
+            )
+            await set_cached_paper_search_result(result, max_results=request.max_results)
+        except ArxivError as exc:
+            errors.append(f"arxiv: {exc}")
+
+    if result is None and os.environ.get("SEMANTIC_SCHOLAR_API_KEY"):
+        try:
+            result = await (semantic_scholar_client or SemanticScholarClient()).search(
+                request.query, max_results=request.max_results
+            )
+        except SemanticScholarError as exc:
+            errors.append(f"semantic_scholar: {exc}")
+
+    if result is None:
+        raise OrchestrationError("PAPER_SEARCH failed on every provider: " + "; ".join(errors))
+
+    try:
+        answer = await (gemini_client or GeminiClient()).generate_paper_search_synthesis(
+            question=request.query,
+            results=[
+                {
+                    "title": item.title,
+                    "authors": list(item.authors),
+                    "venue": item.venue,
+                    "abstract": item.abstract,
+                    "url": item.url,
+                }
+                for item in result.results
+            ],
+        )
+    except GeminiError as exc:
+        raise OrchestrationError(f"PAPER_SEARCH synthesis failed: {exc}") from exc
+
+    return AIResponse(
+        task_type=TaskType.PAPER_SEARCH,
+        provider=ProviderName.GEMINI,
+        content=answer,
+        citations=[Citation(source_id=item.url, excerpt=item.abstract) for item in result.results],
         metadata={"search_provider": result.provider.value},
     )
 
