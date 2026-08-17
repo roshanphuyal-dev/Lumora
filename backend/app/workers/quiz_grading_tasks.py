@@ -30,9 +30,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import get_settings
 from app.db.session import celery_session_maker
 from app.models.quiz_attempt import QuizAttempt, QuizAttemptAnswer, QuizAttemptStatus
 from app.models.weak_topic import WeakTopic
+from app.services.learning_service import record_attempt_evidence, record_quiz_completed_activity
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -143,5 +145,20 @@ async def _grade_quiz_attempt(attempt_id: uuid.UUID) -> None:
         ]
         if missed_topics:
             await _upsert_weak_topics(db, attempt.user_id, attempt.quiz.notebook_id, missed_topics)
+
+        if get_settings().personalization_enabled:
+            await record_attempt_evidence(
+                db,
+                attempt,
+                attempt.quiz.notebook_id,
+                list(attempt.attempt_answers),
+                observed_at=attempt.graded_at,
+            )
+            await record_quiz_completed_activity(
+                db,
+                attempt,
+                attempt.quiz.notebook_id,
+                occurred_at=attempt.graded_at,
+            )
 
         await db.commit()

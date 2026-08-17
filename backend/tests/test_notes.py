@@ -242,14 +242,15 @@ async def test_generate_note_uses_grounding_only_for_indexed_remote_notebook(
         content="# Cells",
         citations=retrieval.citations,
     )
-    run_task = AsyncMock(side_effect=[retrieval, generated])
+    generation_task = AsyncMock(return_value=generated)
+    grounding_task = AsyncMock(return_value=retrieval)
     with (
         patch("app.workers.note_tasks.celery_session_maker", TestSessionLocal),
-        patch("app.workers.note_tasks.run_task", new=run_task),
+        patch("app.workers.note_tasks.run_task", new=generation_task),
+        patch("app.services.generation_grounding_service.run_task", new=grounding_task),
     ):
         await _generate_note(note.id)
-    assert [call.args[0] for call in run_task.await_args_list] == [
-        TaskType.NOTEBOOK_QUERY,
-        TaskType.NOTES_GENERATION,
-    ]
-    assert run_task.await_args_list[1].args[1].context == "Grounded cells"
+    grounding_task.assert_awaited_once()
+    assert grounding_task.await_args.args[0] is TaskType.NOTEBOOK_QUERY
+    assert generation_task.await_args.args[0] is TaskType.NOTES_GENERATION
+    assert generation_task.await_args.args[1].context == "Grounded cells"

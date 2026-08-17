@@ -80,7 +80,10 @@ from ai.paper_search.cache import (
     set_cached_paper_search_result,
 )
 from ai.paper_search.schemas import PaperSearchProvider, PaperSearchResult
-from ai.paper_search.semantic_scholar_client import SemanticScholarClient, SemanticScholarError
+from ai.paper_search.semantic_scholar_client import (
+    SemanticScholarClient,
+    SemanticScholarError,
+)
 
 TaskRequest = (
     DocumentIndexRequest
@@ -139,18 +142,28 @@ async def run_task(
 
     if task_type is TaskType.TEACHING_EXPLANATION:
         if not isinstance(request, TeachingExplanationRequest):
-            raise OrchestrationError("TEACHING_EXPLANATION requires a TeachingExplanationRequest.")
-        return await _run_teaching_explanation(request, gemini_client, opencode_zen_client)
+            raise OrchestrationError(
+                "TEACHING_EXPLANATION requires a TeachingExplanationRequest."
+            )
+        return await _run_teaching_explanation(
+            request, gemini_client, opencode_zen_client
+        )
 
     if task_type is TaskType.NOTES_GENERATION:
         if not isinstance(request, NotesGenerationRequest):
-            raise OrchestrationError("NOTES_GENERATION requires a NotesGenerationRequest.")
+            raise OrchestrationError(
+                "NOTES_GENERATION requires a NotesGenerationRequest."
+            )
         return await _run_notes_generation(request, gemini_client, opencode_zen_client)
 
     if task_type is TaskType.FLASHCARD_GENERATION:
         if not isinstance(request, FlashcardGenerationRequest):
-            raise OrchestrationError("FLASHCARD_GENERATION requires a FlashcardGenerationRequest.")
-        return await _run_flashcard_generation(request, gemini_client, opencode_zen_client)
+            raise OrchestrationError(
+                "FLASHCARD_GENERATION requires a FlashcardGenerationRequest."
+            )
+        return await _run_flashcard_generation(
+            request, gemini_client, opencode_zen_client
+        )
 
     if task_type is TaskType.STRUCTURED_NOTE_GENERATION:
         if not isinstance(request, StructuredNoteGenerationRequest):
@@ -168,7 +181,9 @@ async def run_task(
 
     if task_type is TaskType.QUIZ_GENERATION:
         if not isinstance(request, QuizGenerationRequest):
-            raise OrchestrationError("QUIZ_GENERATION requires a QuizGenerationRequest.")
+            raise OrchestrationError(
+                "QUIZ_GENERATION requires a QuizGenerationRequest."
+            )
         return await _run_quiz_generation(request, gemini_client)
 
     if task_type is TaskType.QUIZ_GRADING:
@@ -178,13 +193,21 @@ async def run_task(
 
     if task_type is TaskType.TOPIC_IMAGE_SEARCH:
         if not isinstance(request, TopicImageSearchRequest):
-            raise OrchestrationError("TOPIC_IMAGE_SEARCH requires a TopicImageSearchRequest.")
-        return await _run_topic_image_search(request, wikimedia_client, openverse_client)
+            raise OrchestrationError(
+                "TOPIC_IMAGE_SEARCH requires a TopicImageSearchRequest."
+            )
+        return await _run_topic_image_search(
+            request, wikimedia_client, openverse_client
+        )
 
     if task_type is TaskType.INTERNET_SEARCH:
         if not isinstance(request, InternetSearchRequest):
-            raise OrchestrationError("INTERNET_SEARCH requires an InternetSearchRequest.")
-        return await _run_internet_search(request, tavily_client, brave_client, gemini_client)
+            raise OrchestrationError(
+                "INTERNET_SEARCH requires an InternetSearchRequest."
+            )
+        return await _run_internet_search(
+            request, tavily_client, brave_client, gemini_client
+        )
 
     if task_type is TaskType.TEXT_EMBEDDING:
         if not isinstance(request, TextEmbeddingRequest):
@@ -229,8 +252,12 @@ async def stream_task(
     opencode_zen_client: OpenCodeZenClient | None = None,
 ) -> AsyncIterator[AIStreamChunk]:
     """Route a streaming task without exposing provider clients to feature code."""
-    if task_type is not TaskType.CHAT_RESPONSE or not isinstance(request, ChatResponseRequest):
-        raise OrchestrationError("CHAT_RESPONSE streaming requires a ChatResponseRequest.")
+    if task_type is not TaskType.CHAT_RESPONSE or not isinstance(
+        request, ChatResponseRequest
+    ):
+        raise OrchestrationError(
+            "CHAT_RESPONSE streaming requires a ChatResponseRequest."
+        )
 
     emitted = False
     try:
@@ -238,6 +265,8 @@ async def stream_task(
             question=request.question,
             context=request.context,
             history=request.history,
+            explanation_depth=request.explanation_depth,
+            explanation_style=request.explanation_style,
         ):
             emitted = True
             yield AIStreamChunk(content=content, provider=ProviderName.GEMINI)
@@ -250,14 +279,22 @@ async def stream_task(
 
     # The fallback client does not expose token streaming. Yield its complete response as
     # one SSE delta rather than fabricating token boundaries after generation completes.
-    fallback_context = "\n\n".join(part for part in (request.history, request.context) if part)
+    fallback_context = "\n\n".join(
+        part for part in (request.history, request.context) if part
+    )
     try:
-        content = await (opencode_zen_client or OpenCodeZenClient()).generate_teaching_explanation(
+        content = await (
+            opencode_zen_client or OpenCodeZenClient()
+        ).generate_teaching_explanation(
             question=request.question,
             context=fallback_context,
+            explanation_depth=request.explanation_depth,
+            explanation_style=request.explanation_style,
         )
     except OpenCodeZenError as exc:
-        raise OrchestrationError(f"CHAT_RESPONSE failed on every provider: {exc}") from exc
+        raise OrchestrationError(
+            f"CHAT_RESPONSE failed on every provider: {exc}"
+        ) from exc
     yield AIStreamChunk(content=content, provider=ProviderName.OPENCODE_ZEN)
 
 
@@ -299,7 +336,9 @@ async def _run_notebook_query(
         task_type=TaskType.NOTEBOOK_QUERY,
         provider=ProviderName.NOTEBOOKLM,
         content=result.answer,
-        citations=[Citation(source_id=c.notebooklm_source_id) for c in result.citations],
+        citations=[
+            Citation(source_id=c.notebooklm_source_id) for c in result.citations
+        ],
         metadata={},
     )
 
@@ -347,21 +386,31 @@ async def _run_teaching_explanation(
 
     try:
         text = await (gemini_client or GeminiClient()).generate_teaching_explanation(
-            question=request.question, context=request.context
+            question=request.question,
+            context=request.context,
+            explanation_depth=request.explanation_depth,
+            explanation_style=request.explanation_style,
         )
         return _teaching_explanation_response(request, ProviderName.GEMINI, text)
     except GeminiError as exc:
         errors.append(f"gemini: {exc}")
 
     try:
-        text = await (opencode_zen_client or OpenCodeZenClient()).generate_teaching_explanation(
-            question=request.question, context=request.context
+        text = await (
+            opencode_zen_client or OpenCodeZenClient()
+        ).generate_teaching_explanation(
+            question=request.question,
+            context=request.context,
+            explanation_depth=request.explanation_depth,
+            explanation_style=request.explanation_style,
         )
         return _teaching_explanation_response(request, ProviderName.OPENCODE_ZEN, text)
     except OpenCodeZenError as exc:
         errors.append(f"opencode_zen: {exc}")
 
-    raise OrchestrationError("TEACHING_EXPLANATION failed on every provider: " + "; ".join(errors))
+    raise OrchestrationError(
+        "TEACHING_EXPLANATION failed on every provider: " + "; ".join(errors)
+    )
 
 
 def _teaching_explanation_response(
@@ -394,9 +443,9 @@ async def _run_notes_generation(
         material = request.material_type.replace("_", " ")
         framing = f"Create a {material} in Markdown about: {request.topic}"
         try:
-            text = await (opencode_zen_client or OpenCodeZenClient()).generate_teaching_explanation(
-                question=framing, context=request.context
-            )
+            text = await (
+                opencode_zen_client or OpenCodeZenClient()
+            ).generate_teaching_explanation(question=framing, context=request.context)
             provider = ProviderName.OPENCODE_ZEN
         except OpenCodeZenError as fallback_exc:
             errors.append(f"opencode_zen: {fallback_exc}")
@@ -463,12 +512,14 @@ async def _run_flashcard_generation(
             "two-line pairs in the exact form `Q: question` then `A: answer`."
         )
         try:
-            text = await (opencode_zen_client or OpenCodeZenClient()).generate_teaching_explanation(
-                question=question, context=request.context
-            )
+            text = await (
+                opencode_zen_client or OpenCodeZenClient()
+            ).generate_teaching_explanation(question=question, context=request.context)
             items = _parse_fallback_flashcards(text)
             if not items:
-                raise OpenCodeZenError("OpenCode Zen returned no parseable Q:/A: pairs.")
+                raise OpenCodeZenError(
+                    "OpenCode Zen returned no parseable Q:/A: pairs."
+                )
             provider = ProviderName.OPENCODE_ZEN
         except OpenCodeZenError as fallback_exc:
             errors.append(f"opencode_zen: {fallback_exc}")
@@ -503,7 +554,9 @@ def _validate_assertion_reason_items(items: list[QuestionItem]) -> None:
     schema"; ADR 0011's hard-failure-over-garbled-grade precedent, extended from grading to
     generation).
     """
-    canonical_normalized = {option.strip().casefold() for option in ASSERTION_REASON_OPTIONS}
+    canonical_normalized = {
+        option.strip().casefold() for option in ASSERTION_REASON_OPTIONS
+    }
     for index, item in enumerate(items):
         if item.question_type != "assertion_reason":
             continue
@@ -520,7 +573,10 @@ def _validate_assertion_reason_items(items: list[QuestionItem]) -> None:
             )
 
         correct_answer = item.correct_answer
-        if correct_answer is None or correct_answer.strip().casefold() not in canonical_normalized:
+        if (
+            correct_answer is None
+            or correct_answer.strip().casefold() not in canonical_normalized
+        ):
             raise OrchestrationError(
                 f"QUIZ_GENERATION returned an assertion_reason question (index {index}) "
                 f"whose correct_answer isn't one of its options: {correct_answer!r}"
@@ -545,21 +601,40 @@ async def _run_quiz_generation(
             question_types=request.question_types,
             count=request.count,
             difficulty=request.difficulty,
+            difficulty_mix=request.difficulty_mix,
         )
         items = TypeAdapter(list[QuestionItem]).validate_json(raw_json)
     except GeminiError as exc:
         raise OrchestrationError(f"QUIZ_GENERATION failed: {exc}") from exc
     except ValidationError as exc:
-        raise OrchestrationError(f"QUIZ_GENERATION returned an invalid quiz: {exc}") from exc
+        raise OrchestrationError(
+            f"QUIZ_GENERATION returned an invalid quiz: {exc}"
+        ) from exc
 
     _validate_assertion_reason_items(items)
+
+    if request.difficulty_mix is not None:
+        actual_mix = {level: 0 for level in ("easy", "medium", "hard")}
+        for item in items:
+            if item.difficulty not in actual_mix:
+                raise OrchestrationError(
+                    f"QUIZ_GENERATION returned unsupported difficulty: {item.difficulty!r}"
+                )
+            actual_mix[item.difficulty] += 1
+        if actual_mix != request.difficulty_mix:
+            raise OrchestrationError(
+                "QUIZ_GENERATION did not honor the requested adaptive difficulty mix: "
+                f"expected {request.difficulty_mix!r}, got {actual_mix!r}"
+            )
 
     return AIResponse(
         task_type=TaskType.QUIZ_GENERATION,
         provider=ProviderName.GEMINI,
         content=json.dumps([item.model_dump() for item in items]),
         citations=request.citations,
-        metadata={},
+        metadata={
+            "adaptation_applied": str(request.difficulty_mix is not None).lower(),
+        },
     )
 
 
@@ -600,7 +675,9 @@ async def _run_quiz_grading(
     except GeminiError as exc:
         raise OrchestrationError(f"QUIZ_GRADING failed: {exc}") from exc
     except ValidationError as exc:
-        raise OrchestrationError(f"QUIZ_GRADING returned an invalid result: {exc}") from exc
+        raise OrchestrationError(
+            f"QUIZ_GRADING returned an invalid result: {exc}"
+        ) from exc
 
     return AIResponse(
         task_type=TaskType.QUIZ_GRADING,
@@ -642,7 +719,9 @@ async def _run_topic_image_search(
     openverse_errored = False
 
     try:
-        result = await (wikimedia_client or WikimediaClient()).search_image(request.query)
+        result = await (wikimedia_client or WikimediaClient()).search_image(
+            request.query
+        )
         if result is not None:
             return _topic_image_response(result, ProviderName.WIKIMEDIA)
     except WikimediaError as exc:
@@ -650,7 +729,9 @@ async def _run_topic_image_search(
         errors.append(f"wikimedia: {exc}")
 
     try:
-        result = await (openverse_client or OpenverseClient()).search_image(request.query)
+        result = await (openverse_client or OpenverseClient()).search_image(
+            request.query
+        )
         if result is not None:
             return _topic_image_response(result, ProviderName.OPENVERSE)
     except OpenverseError as exc:
@@ -673,7 +754,9 @@ async def _run_topic_image_search(
     )
 
 
-def _topic_image_response(result: TopicImageResult, provider: ProviderName) -> AIResponse:
+def _topic_image_response(
+    result: TopicImageResult, provider: ProviderName
+) -> AIResponse:
     return AIResponse(
         task_type=TaskType.TOPIC_IMAGE_SEARCH,
         provider=provider,
@@ -730,10 +813,14 @@ async def _run_internet_search(
             errors.append(f"brave: {exc}")
 
     if result is None:
-        raise OrchestrationError("INTERNET_SEARCH failed on every provider: " + "; ".join(errors))
+        raise OrchestrationError(
+            "INTERNET_SEARCH failed on every provider: " + "; ".join(errors)
+        )
 
     try:
-        answer = await (gemini_client or GeminiClient()).generate_internet_search_synthesis(
+        answer = await (
+            gemini_client or GeminiClient()
+        ).generate_internet_search_synthesis(
             question=request.query,
             results=[
                 {"title": item.title, "url": item.url, "snippet": item.snippet}
@@ -747,7 +834,10 @@ async def _run_internet_search(
         task_type=TaskType.INTERNET_SEARCH,
         provider=ProviderName.GEMINI,
         content=answer,
-        citations=[Citation(source_id=item.url, excerpt=item.snippet) for item in result.results],
+        citations=[
+            Citation(source_id=item.url, excerpt=item.snippet)
+            for item in result.results
+        ],
         metadata={"search_provider": result.provider.value},
     )
 
@@ -793,7 +883,9 @@ async def _run_paper_search(
             result = await (arxiv_client or ArxivClient()).search(
                 request.query, max_results=request.max_results
             )
-            await set_cached_paper_search_result(result, max_results=request.max_results)
+            await set_cached_paper_search_result(
+                result, max_results=request.max_results
+            )
         except ArxivError as exc:
             errors.append(f"arxiv: {exc}")
 
@@ -806,10 +898,14 @@ async def _run_paper_search(
             errors.append(f"semantic_scholar: {exc}")
 
     if result is None:
-        raise OrchestrationError("PAPER_SEARCH failed on every provider: " + "; ".join(errors))
+        raise OrchestrationError(
+            "PAPER_SEARCH failed on every provider: " + "; ".join(errors)
+        )
 
     try:
-        answer = await (gemini_client or GeminiClient()).generate_paper_search_synthesis(
+        answer = await (
+            gemini_client or GeminiClient()
+        ).generate_paper_search_synthesis(
             question=request.query,
             results=[
                 {
@@ -829,7 +925,10 @@ async def _run_paper_search(
         task_type=TaskType.PAPER_SEARCH,
         provider=ProviderName.GEMINI,
         content=answer,
-        citations=[Citation(source_id=item.url, excerpt=item.abstract) for item in result.results],
+        citations=[
+            Citation(source_id=item.url, excerpt=item.abstract)
+            for item in result.results
+        ],
         metadata={"search_provider": result.provider.value},
     )
 

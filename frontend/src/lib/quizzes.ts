@@ -41,6 +41,8 @@ export interface QuizRead {
   difficulty: QuizDifficulty
   time_limit_seconds: number | null
   include_web_search: boolean
+  adaptation_applied: boolean
+  adaptive_difficulty_mix: Record<Exclude<QuizDifficulty, "mixed">, number> | null
   error_message: string | null
   questions: QuestionRead[]
   created_at: string

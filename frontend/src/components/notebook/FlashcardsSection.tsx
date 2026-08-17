@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
+import { CitationList } from "@/components/notebook/CitationList"
 import { useCreateFlashcardSet, useDeleteFlashcardSet, useFlashcardSets } from "@/hooks/use-flashcard-sets"
 import { ApiError } from "@/lib/api"
 import type { FlashcardRead, FlashcardSetRead } from "@/lib/flashcards"
@@ -23,7 +24,7 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback
 }
 
-function FlashcardDeck({ cards }: { cards: FlashcardRead[] }) {
+function FlashcardDeck({ cards, notebookId }: { cards: FlashcardRead[]; notebookId: string }) {
   const sorted = useMemo(() => [...cards].sort((a, b) => a.position - b.position), [cards])
   const [index, setIndex] = useState(0)
   const [flipped, setFlipped] = useState(false)
@@ -72,15 +73,18 @@ function FlashcardDeck({ cards }: { cards: FlashcardRead[] }) {
           >
             <span className="text-xs font-medium text-muted-foreground">Answer</span>
             <p className="max-w-sm text-center font-serif text-base text-foreground">{card.back}</p>
-            {card.citation && (
-              <div className="mt-2 max-w-sm rounded-md bg-background/60 p-2 text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">Source {card.citation.source_id}</span>
-                {card.citation.excerpt && <span className="mt-0.5 block">“{card.citation.excerpt}”</span>}
-              </div>
-            )}
           </div>
         </div>
       </button>
+
+      {flipped && card.citation && (
+        <CitationList
+          notebookId={notebookId}
+          citations={[card.citation]}
+          label="Source"
+          className="w-full max-w-md"
+        />
+      )}
 
       <div className="flex w-full max-w-md items-center justify-between">
         <Button type="button" variant="outline" size="sm" onClick={() => goTo(index - 1)} disabled={index === 0}>
@@ -127,7 +131,7 @@ function FlashcardSetRow({ set, notebookId }: { set: FlashcardSetRead; notebookI
       {deleteMutation.isError && <p className="px-9 pb-2.5 text-xs text-destructive" role="alert">{errorMessage(deleteMutation.error, "Couldn't delete this flashcard set.")}</p>}
       {expanded && (
         <div className="border-t border-border px-4 py-4">
-          <FlashcardDeck cards={set.flashcards} />
+          <FlashcardDeck cards={set.flashcards} notebookId={notebookId} />
         </div>
       )}
     </div>

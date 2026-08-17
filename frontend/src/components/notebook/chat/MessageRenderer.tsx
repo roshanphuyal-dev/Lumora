@@ -1,4 +1,4 @@
-import { memo } from "react"
+import { memo, type ComponentProps } from "react"
 import Markdown, { type Components } from "react-markdown"
 import "katex/dist/katex.min.css"
 import remarkGfm from "remark-gfm"
@@ -54,7 +54,11 @@ sanitizeSchema.tagNames = [
 ]
 
 const remarkPlugins = [remarkGfm, remarkMath]
-const rehypePlugins = [rehypeKatex, rehypeHighlight, [rehypeSanitize, sanitizeSchema]] as const
+const rehypePlugins: NonNullable<ComponentProps<typeof Markdown>["rehypePlugins"]> = [
+  rehypeKatex,
+  rehypeHighlight,
+  [rehypeSanitize, sanitizeSchema],
+]
 
 const components: Components = {
   pre({ children }) {

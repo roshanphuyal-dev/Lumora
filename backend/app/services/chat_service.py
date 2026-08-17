@@ -10,9 +10,10 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.chat import Conversation, Message, MessageKind, MessageRole
 from app.models.notebook import NotebookSourceIndexStatus
-from app.services import notebook_service
+from app.services import notebook_service, rag_retrieval_service
 from app.services.notebook_service import get_owned_notebook
 
 _HISTORY_MESSAGE_LIMIT = 20
@@ -216,6 +217,7 @@ async def prepare_stream(
     has_indexed_source = any(
         source.indexing_status == NotebookSourceIndexStatus.INDEXED for source in notebook.sources
     )
+    notebooklm_adequate = False
     if notebook.notebooklm_notebook_id and has_indexed_source:
         try:
             retrieval = await run_task(
@@ -228,14 +230,29 @@ async def prepare_stream(
         except OrchestrationError:
             pass
         else:
+            notebooklm_adequate = bool(retrieval.content.strip() and retrieval.citations)
             context = retrieval.content
             citations = retrieval.citations
 
+    if get_settings().rag_enabled and not notebooklm_adequate:
+        try:
+            local = await rag_retrieval_service.retrieve(db, user_id, notebook_id, content)
+        except (OrchestrationError, rag_retrieval_service.LocalRetrievalError):
+            pass
+        else:
+            context = local.context
+            citations = local.citations
+
+    explanation_depth, explanation_style = await notebook_service.get_tutoring_preferences(
+        db, user_id
+    )
     return user_message, ChatResponseRequest(
         question=content,
         context=context,
         history=history,
         citations=citations,
+        explanation_depth=explanation_depth,
+        explanation_style=explanation_style,
     )
 
 

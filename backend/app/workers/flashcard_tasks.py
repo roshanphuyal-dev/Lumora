@@ -5,19 +5,15 @@ import uuid
 
 from ai.orchestrator.orchestrator import OrchestrationError, run_task
 from ai.orchestrator.schemas import (
-    Citation,
     FlashcardGenerationRequest,
     FlashcardItem,
-    NotebookQueryRequest,
 )
 from ai.orchestrator.task_types import TaskType
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 
 from app.db.session import celery_session_maker
 from app.models.flashcard import Flashcard, FlashcardSet, FlashcardSetStatus
-from app.models.notebook import Notebook, NotebookSourceIndexStatus
+from app.services.generation_grounding_service import get_generation_grounding
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -41,35 +37,10 @@ async def _generate_flashcards(
         await db.commit()
 
         try:
-            notebook = await db.scalar(
-                select(Notebook)
-                .options(selectinload(Notebook.sources))
-                .where(Notebook.id == flashcard_set.notebook_id)
-            )
-            context = ""
-            citations: list[Citation] = []
             query = topic or flashcard_set.title
-            if (
-                notebook is not None
-                and notebook.notebooklm_notebook_id
-                and any(
-                    source.indexing_status == NotebookSourceIndexStatus.INDEXED
-                    for source in notebook.sources
-                )
-            ):
-                try:
-                    retrieval = await run_task(
-                        TaskType.NOTEBOOK_QUERY,
-                        NotebookQueryRequest(
-                            notebooklm_notebook_id=notebook.notebooklm_notebook_id,
-                            question=query,
-                        ),
-                    )
-                except OrchestrationError:
-                    pass
-                else:
-                    context = retrieval.content
-                    citations = retrieval.citations
+            context, citations = await get_generation_grounding(
+                db, flashcard_set.user_id, flashcard_set.notebook_id, query
+            )
 
             response = await run_task(
                 TaskType.FLASHCARD_GENERATION,

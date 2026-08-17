@@ -30,6 +30,7 @@ The contract reference for the FastAPI backend: endpoint groups, auth model, ver
   - `POST /notebooks`, `GET /notebooks` (paginated; optional case-insensitive `search` across name and description), `GET /notebooks/{id}` (detail includes attached `sources`), `DELETE /notebooks/{id}`.
   - `POST /notebooks/{id}/sources` — attach a `document_id` as a source; requires the document's `parse_status == done` (409 otherwise); dispatches NotebookLM indexing (Celery) and returns the source with `indexing_status=pending`.
   - `DELETE /notebooks/{id}/sources/{source_id}` — detach a source.
+  - `GET /notebooks/{id}/sources/{source_id}/chunks/{chunk_id}` — resolve a verified local citation to owner-scoped source metadata, page/slide locator, and bounded chunk text; returns 404 for any notebook/source/chunk ownership or relationship mismatch.
   - `POST /notebooks/{id}/ask` — plain (ungrounded) teaching-explanation question via the orchestration layer (Gemini, OpenCode Zen fallback, ADR 0008); returns `{content, provider}`. Single-turn, not persisted — superseded for multi-turn use by the Chat API below; kept for now as the simple one-shot path.
   - `POST /notebooks/{id}/search` — body `{query}`; internet search for current/external information not covered by the notebook's own sources (`TaskType.INTERNET_SEARCH`: Tavily primary, Brave fallback if configured, Gemini synthesizes the cited answer — ADR 0012). Returns `{content, provider, citations}`, same shape as `/ask`. Single-turn, not persisted. 502 if every search provider fails.
   - `POST /notebooks/{id}/paper-search` — body `{query}`; academic literature search (`TaskType.PAPER_SEARCH`: arXiv primary, Semantic Scholar fallback if configured, Gemini synthesizes the cited answer — ADR 0013). Returns `{content, provider, citations}`, same shape as `/search`. Single-turn, not persisted. 502 if every search provider fails. Superseded for chat use by the persisted `POST /notebooks/{id}/conversations/{conversation_id}/paper-search` below (same reasoning as `/search` vs. its conversation-scoped counterpart); kept for now as the stateless one-shot path.
@@ -63,7 +64,7 @@ The contract reference for the FastAPI backend: endpoint groups, auth model, ver
 - **Quiz API** (`/api/v1/notebooks/{notebook_id}/quizzes`, same scoping/async-poll shape as the Notes/Flashcards APIs; generation only):
   - `POST /notebooks/{id}/quizzes` — body `{title?, topic?, question_types?, question_count?, difficulty?, time_limit_seconds?, include_web_search?}` (`question_types` a non-empty subset of `mcq`/`true_false`/`fill_blank`/`matching`/`short_answer`/`long_answer`/`case_study`, defaults to `["mcq"]`; `question_count` defaults to 10; `difficulty` one of `easy`/`medium`/`hard`/`mixed`, defaults to `mixed`; `include_web_search` defaults to `false` — opts generation into grounding with `TaskType.INTERNET_SEARCH` results, see `app/workers/quiz_tasks.py`); creates the quiz (`status=pending`) and dispatches generation.
   - `GET /notebooks/{id}/quizzes` — paginated list.
-  - `GET /notebooks/{id}/quizzes/{quiz_id}` — detail including nested `questions` (empty until `status=done`); the poll target. Questions are returned in the answer-key-free `QuestionRead` shape (no `correct_answer`/`reference_answer`/`explanation`/`citation`) — this is a pre-attempt/preview view. The answer-key-bearing `QuestionReviewRead` shape exists in `backend/app/schemas/quiz.py`, used by the Quiz Attempts API below once an attempt is graded.
+  - `GET /notebooks/{id}/quizzes/{quiz_id}` — detail including nested `questions` (empty until `status=done`); the poll target. The quiz includes `adaptation_applied` and nullable `adaptive_difficulty_mix` (`{easy, medium, hard}` counts). Questions are returned in the answer-key-free `QuestionRead` shape (no `correct_answer`/`reference_answer`/`explanation`/`citation`) — this is a pre-attempt/preview view.
   - `DELETE /notebooks/{id}/quizzes/{quiz_id}`.
 - **Quiz Attempts API** (`/api/v1/notebooks/{notebook_id}/quizzes/{quiz_id}/attempts`, scoped to `user_id` = authenticated user; deterministic + AI-dispatched grading per ADR 0011):
   - `POST /notebooks/{id}/quizzes/{quiz_id}/attempts` — no request body; 409 if the quiz isn't `status=done` or has no questions. Randomizes `question_order`, snapshots the quiz's `time_limit_seconds`, creates the attempt (`status=in_progress`), returns it in the `QuizAttemptRead` shape (answer-key-free — see below). Multiple concurrent/repeat attempts per quiz are allowed; each is independent.
@@ -73,8 +74,20 @@ The contract reference for the FastAPI backend: endpoint groups, auth model, ver
   - `GET /notebooks/{id}/quizzes/{quiz_id}/attempts` — paginated list of the user's attempts for this quiz, lightweight `QuizAttemptSummary` shape (no nested questions).
   - A graded attempt's missed questions (deterministic or AI-graded, wherever `topic_tag` is set) increment `weak_topics.missed_count` for `(user_id, notebook_id, topic)` — feeds adaptive tutoring (`docs/AI.md#memory--personalization`), not itself exposed via this API group yet.
 - Internet search, paper search, and topic-image lookup are implemented as `POST /notebooks/{id}/search`, `POST /notebooks/{id}/paper-search`, and `POST /notebooks/{id}/image-search` under the Notebook API above, not standalone groups.
-- **Progress API** — study stats, streaks, mastery.
-- **Analytics API** — performance graphs, heatmaps.
+- **Progress API** (default-off behind `PERSONALIZATION_ENABLED`, notebook- and owner-scoped):
+  - `GET /notebooks/{id}/progress` — graded-attempt count, evidence-backed answered-question count, aggregate quiz score, and tracked/low-mastery topic counts.
+  - `GET /notebooks/{id}/mastery` — paginated weakest-first topic mastery with confidence, decayed evidence weight/count, and calculation time. Values use live recency decay from graded-answer evidence.
+- **Analytics API** (default-off behind `PERSONALIZATION_ENABLED`):
+  - `GET /notebooks/{id}/analytics/quiz-performance` — paginated graded-attempt score history plus daily aggregates for the returned window.
+  - `POST /notebooks/{id}/activities` — idempotently record a client study event. Body: `{activity_key, activity_type, duration_seconds, occurred_at, resource_type?, resource_id?}`; client activity types are `study_session`, `material_viewed`, and `material_revised`, duration is bounded to four hours, timestamps require a timezone and a seven-day backfill window, and resource fields must be supplied together. `quiz_completed` is system-authored during grading.
+  - `GET /notebooks/{id}/analytics/activity?days=90` — notebook study-time totals, current/longest UTC-date streaks, active-day count, and daily heatmap entries. `days` is bounded to 1–366.
+  - `GET /users/me/analytics/activity?days=90` — the same deterministic activity rollup across notebooks owned by the authenticated user.
+  - `GET /notebooks/{id}/revision-history` — paginated factual material-viewed/material-revised/quiz-completed events, newest first.
+- **Personalization API** (default-off behind `PERSONALIZATION_ENABLED`):
+  - `GET/PATCH /users/me/learning-preferences` — read or explicitly set user-scoped explanation depth/style.
+  - `GET /users/me/learning-preference-suggestions` and `POST .../refresh` — list pending suggestions or derive them from deterministic learning signals; pending suggestions do not affect tutoring prompts.
+  - `POST /users/me/learning-preference-suggestions/{suggestion_id}/accept|reject` — resolve a suggestion; only acceptance writes the preference.
+  - `GET /notebooks/{id}/recommendations` — owner-scoped actions selected and prioritized deterministically from mastery. Action, priority, topic, URL, and rationale are backend-authoritative.
 - **Export API** — Overleaf/LaTeX/PDF/DOCX/Markdown export.
 
 ### Conventions

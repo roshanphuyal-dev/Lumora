@@ -1,33 +1,54 @@
 import asyncio
 import json
 import logging
+import math
 import uuid
 
 from ai.orchestrator.orchestrator import OrchestrationError, run_task
 from ai.orchestrator.schemas import (
-    Citation,
     InternetSearchRequest,
-    NotebookQueryRequest,
     QuestionItem,
     QuizGenerationRequest,
 )
 from ai.orchestrator.task_types import TaskType
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 
+from app.core.config import get_settings
 from app.db.session import celery_session_maker
-from app.models.notebook import Notebook, NotebookSourceIndexStatus
 from app.models.quiz import Question, QuestionType, Quiz, QuizDifficulty, QuizStatus
+from app.services import learning_service
+from app.services.generation_grounding_service import get_generation_grounding
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 _QUESTION_ITEMS = TypeAdapter(list[QuestionItem])
+_DIFFICULTY_LEVELS = ("easy", "medium", "hard")
+_MASTERY_BAND_MIXES = (
+    (40.0, (0.5, 0.4, 0.1)),
+    (70.0, (0.2, 0.6, 0.2)),
+    (float("inf"), (0.1, 0.4, 0.5)),
+)
 
 
 @celery_app.task(name="quizzes.generate")
 def generate_quiz_task(quiz_id: str) -> None:
     asyncio.run(_generate_quiz(uuid.UUID(quiz_id)))
+
+
+def difficulty_mix_for_mastery(mastery_percent: float, count: int) -> dict[str, int]:
+    """Convert ADR 0014's mastery-band percentages into exact integer counts."""
+    proportions = next(
+        mix for upper_bound, mix in _MASTERY_BAND_MIXES if mastery_percent < upper_bound
+    )
+    raw_counts = [count * proportion for proportion in proportions]
+    counts = [math.floor(value) for value in raw_counts]
+    remaining = count - sum(counts)
+    remainder_order = sorted(
+        range(len(counts)), key=lambda index: (-(raw_counts[index] - counts[index]), index)
+    )
+    for index in remainder_order[:remaining]:
+        counts[index] += 1
+    return dict(zip(_DIFFICULTY_LEVELS, counts, strict=True))
 
 
 def _question_kwargs(item: QuestionItem) -> dict:
@@ -78,42 +99,34 @@ def _question_kwargs(item: QuestionItem) -> dict:
 async def _generate_quiz(quiz_id: uuid.UUID) -> None:
     async with celery_session_maker() as db:
         quiz = await db.get(Quiz, quiz_id)
-        if quiz is None:
+        if quiz is None or quiz.status != QuizStatus.PENDING:
             return
         quiz.status = QuizStatus.GENERATING
+        quiz.adaptation_applied = False
+        quiz.adaptive_difficulty_mix = None
         quiz.error_message = None
         await db.commit()
 
         try:
-            notebook = await db.scalar(
-                select(Notebook)
-                .options(selectinload(Notebook.sources))
-                .where(Notebook.id == quiz.notebook_id)
-            )
-            context = ""
-            citations: list[Citation] = []
             query = quiz.topic or quiz.title
+            difficulty_mix: dict[str, int] | None = None
             if (
-                notebook is not None
-                and notebook.notebooklm_notebook_id
-                and any(
-                    source.indexing_status == NotebookSourceIndexStatus.INDEXED
-                    for source in notebook.sources
-                )
+                get_settings().personalization_enabled
+                and quiz.difficulty == QuizDifficulty.MIXED
+                and quiz.topic
             ):
-                try:
-                    retrieval = await run_task(
-                        TaskType.NOTEBOOK_QUERY,
-                        NotebookQueryRequest(
-                            notebooklm_notebook_id=notebook.notebooklm_notebook_id,
-                            question=query,
-                        ),
+                mastery = await learning_service.get_topic_mastery(
+                    db, quiz.user_id, quiz.notebook_id, quiz.topic
+                )
+                if mastery is not None and mastery.evidence_count > 0:
+                    difficulty_mix = difficulty_mix_for_mastery(
+                        mastery.mastery_percent, quiz.question_count
                     )
-                except OrchestrationError:
-                    pass
-                else:
-                    context = retrieval.content
-                    citations = retrieval.citations
+                    quiz.adaptation_applied = True
+                    quiz.adaptive_difficulty_mix = difficulty_mix
+            context, citations = await get_generation_grounding(
+                db, quiz.user_id, quiz.notebook_id, query
+            )
 
             if quiz.include_web_search:
                 try:
@@ -141,6 +154,7 @@ async def _generate_quiz(quiz_id: uuid.UUID) -> None:
                     question_types=quiz.question_types,
                     count=quiz.question_count,
                     difficulty=quiz.difficulty.value,
+                    difficulty_mix=difficulty_mix,
                 ),
             )
             items = _QUESTION_ITEMS.validate_python(json.loads(response.content))

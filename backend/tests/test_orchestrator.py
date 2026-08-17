@@ -105,7 +105,10 @@ async def test_teaching_explanation_routes_to_gemini() -> None:
     response = await run_task(TaskType.TEACHING_EXPLANATION, request, gemini_client=mock_client)
 
     mock_client.generate_teaching_explanation.assert_awaited_once_with(
-        question=request.question, context=request.context
+        question=request.question,
+        context=request.context,
+        explanation_depth=None,
+        explanation_style=None,
     )
     assert response.task_type == TaskType.TEACHING_EXPLANATION
     assert response.provider == ProviderName.GEMINI
@@ -265,7 +268,10 @@ async def test_teaching_explanation_falls_back_to_opencode_zen_on_gemini_error()
     )
 
     opencode_zen_mock.generate_teaching_explanation.assert_awaited_once_with(
-        question=request.question, context=request.context
+        question=request.question,
+        context=request.context,
+        explanation_depth=None,
+        explanation_style=None,
     )
     assert response.provider == ProviderName.OPENCODE_ZEN
     assert response.content == "A derivative is a rate of change."
@@ -334,6 +340,7 @@ async def test_quiz_generation_routes_to_gemini() -> None:
         question_types=request.question_types,
         count=request.count,
         difficulty=request.difficulty,
+        difficulty_mix=None,
     )
     assert response.task_type == TaskType.QUIZ_GENERATION
     assert response.provider == ProviderName.GEMINI
@@ -345,6 +352,17 @@ async def test_quiz_generation_routes_to_gemini() -> None:
     )
     # Citations carried through end-to-end (.claude/rules/ai.md).
     assert response.citations == request.citations
+
+
+async def test_quiz_generation_rejects_adaptive_mix_drift() -> None:
+    mock_client = AsyncMock(spec=GeminiClient)
+    mock_client.generate_quiz.return_value = _quiz_generation_items_json()
+    request = _quiz_generation_request().model_copy(
+        update={"difficulty_mix": {"easy": 0, "medium": 1, "hard": 0}}
+    )
+
+    with pytest.raises(OrchestrationError, match="did not honor"):
+        await run_task(TaskType.QUIZ_GENERATION, request, gemini_client=mock_client)
 
 
 async def test_quiz_generation_rejects_mismatched_request_type() -> None:

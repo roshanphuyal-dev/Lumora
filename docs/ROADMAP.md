@@ -47,12 +47,11 @@ Verified end-to-end against a running backend + real providers (Postgres, Redis/
 
 Both of this Definition of Done's code-resolvable gaps (quiz+search wiring, research paper search) are now closed (257 → 319 passing backend tests; frontend lint/tsc/test clean). Two items remain open, neither a code blocker: Tavily's privacy-policy-vs-FAQ ambiguity and Semantic Scholar's default non-commercial license both require written clarification from the provider before real student-derived queries reach them (`docs/SECURITY.md`, `ADR 0012`, `ADR 0013`) — pre-production gates the user still needs to pursue, not something a code change resolves. The quiz-taking UI also remains not manually verified in a running browser (no connected Chrome extension during the milestones that built it) — Vitest/RTL coverage exists (`QuizTakingView`/`AnswerReview` tests, `docs/TESTING.md`) but isn't a substitute for that still-outstanding manual pass.
 
-### Phase 4 — Personalization (Status: Not Started)
-- Architecture accepted in [ADR 0014](adr/0014-phase-4-retrieval-personalization.md); this records the design only, and no Phase 4 implementation is claimed yet. Ship the work as separate RAG foundations, hybrid retrieval/citations, learning memory/analytics, and preferences/recommendations/adaptive-tutoring PR chains.
-- Full RAG pipeline across notebooks
-- Long-term memory (per-student weak topics, history)
-- Adaptive difficulty tutoring
-- Citation system end-to-end
+### Phase 4 — Personalization (Status: In Progress)
+- Implemented behind default-off `RAG_ENABLED` / `PERSONALIZATION_ENABLED` gates: semantic chunks and 768-dimensional embeddings, owner-scoped hybrid retrieval with reciprocal-rank fusion, NotebookLM-first fallback routing, authoritative citation resolution, and clickable local citation panels across generated-content surfaces.
+- Implemented and database-tested: graded-answer evidence, recency/difficulty-weighted topic mastery, progress and quiz-performance APIs, explicit learning preferences, deterministic pending suggestions with accept/reject, deterministic recommendations, and mastery-band adaptation for newly generated mixed quizzes. Pending suggestions never affect prompts; active attempts are never mutated.
+- Implemented frontend surfaces: mastery/progress dashboard, quiz trends, preference controls and suggestions, recommendations, and adaptation status.
+- Remaining before **Done**: apply migrations and exercise the complete flow in a clean full-stack environment; manually verify responsive/light/dark UI; exercise live NotebookLM/Gemini embedding and generation paths with both flags enabled; tune retrieval against the checked-in evaluation fixture. Study-time tracking, UTC-date streaks, factual revision history, and learning heatmap APIs are implemented; their final frontend verification remains part of the full-stack pass.
 
 ### Phase 5 — Expansion (Status: Not Started)
 - Voice tutor, AI whiteboard, mobile app

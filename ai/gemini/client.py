@@ -21,10 +21,10 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field, RootModel, ValidationError
 
-from ai.prompts.chat_response_v1 import (
+from ai.prompts.chat_response_v2 import (
     SYSTEM_PROMPT as CHAT_SYSTEM_PROMPT,
 )
-from ai.prompts.chat_response_v1 import (
+from ai.prompts.chat_response_v2 import (
     render_user_prompt as render_chat_prompt,
 )
 from ai.prompts.flashcard_generation_v1 import (
@@ -49,8 +49,8 @@ from ai.prompts.paper_search_synthesis_v1 import PaperResultItemInput
 from ai.prompts.paper_search_synthesis_v1 import (
     render_user_prompt as render_paper_search_prompt,
 )
-from ai.prompts.quiz_generation_v1 import SYSTEM_PROMPT as QUIZ_SYSTEM_PROMPT
-from ai.prompts.quiz_generation_v1 import render_user_prompt as render_quiz_prompt
+from ai.prompts.quiz_generation_v2 import SYSTEM_PROMPT as QUIZ_SYSTEM_PROMPT
+from ai.prompts.quiz_generation_v2 import render_user_prompt as render_quiz_prompt
 from ai.prompts.quiz_grading_v1 import SYSTEM_PROMPT as QUIZ_GRADING_SYSTEM_PROMPT
 from ai.prompts.quiz_grading_v1 import GradingItemInput
 from ai.prompts.quiz_grading_v1 import render_user_prompt as render_quiz_grading_prompt
@@ -60,7 +60,7 @@ from ai.prompts.structured_note_generation_v1 import (
 from ai.prompts.structured_note_generation_v1 import (
     render_user_prompt as render_structured_note_prompt,
 )
-from ai.prompts.teaching_explanation_v1 import SYSTEM_PROMPT, render_user_prompt
+from ai.prompts.teaching_explanation_v2 import SYSTEM_PROMPT, render_user_prompt
 
 _MODEL_NAME = "gemini-3.5-flash"
 EMBEDDING_MODEL_NAME = "gemini-embedding-001"
@@ -183,7 +183,9 @@ class GeminiClient:
     def __init__(self, api_key: str | None = None) -> None:
         resolved_key = api_key or os.environ.get("GEMINI_API_KEY")
         if not resolved_key:
-            raise GeminiError("GEMINI_API_KEY is not configured (see backend/.env.example).")
+            raise GeminiError(
+                "GEMINI_API_KEY is not configured (see backend/.env.example)."
+            )
         self._client = genai.Client(api_key=resolved_key)
 
     async def embed_texts(self, *, texts: list[str], purpose: str) -> list[list[float]]:
@@ -202,7 +204,7 @@ class GeminiClient:
                     output_dimensionality=EMBEDDING_DIMENSIONS,
                 ),
             )
-        except Exception as exc:  # noqa: BLE001 - normalize provider failures
+        except Exception as exc:
             raise GeminiError(f"Gemini embedding failed: {exc}") from exc
 
         provider_embeddings = response.embeddings or []
@@ -218,20 +220,32 @@ class GeminiClient:
             )
         return embeddings
 
-    async def generate_teaching_explanation(self, question: str, context: str = "") -> str:
+    async def generate_teaching_explanation(
+        self,
+        question: str,
+        context: str = "",
+        *,
+        explanation_depth: str | None = None,
+        explanation_style: str | None = None,
+    ) -> str:
         """Ask Gemini to explain `question`, optionally grounded in `context`.
 
         `context` is treated strictly as reference data by the prompt template
         (`ai/prompts/teaching_explanation_v1.py`), never as instructions.
         """
-        user_prompt = render_user_prompt(question=question, context=context)
+        user_prompt = render_user_prompt(
+            question=question,
+            context=context,
+            explanation_depth=explanation_depth,
+            explanation_style=explanation_style,
+        )
         try:
             response = await self._client.aio.models.generate_content(
                 model=_MODEL_NAME,
                 contents=user_prompt,
                 config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
             )
-        except Exception as exc:  # noqa: BLE001 - normalize every provider error to GeminiError
+        except Exception as exc:
             raise GeminiError(f"Gemini generation failed: {exc}") from exc
 
         text = response.text
@@ -239,16 +253,22 @@ class GeminiClient:
             raise GeminiError("Gemini returned an empty response.")
         return text
 
-    async def generate_notes(self, *, material_type: str, topic: str, context: str) -> str:
+    async def generate_notes(
+        self, *, material_type: str, topic: str, context: str
+    ) -> str:
         """Structure optional grounded context into Markdown notes or a study guide."""
-        user_prompt = render_note_prompt(material_type=material_type, topic=topic, context=context)
+        user_prompt = render_note_prompt(
+            material_type=material_type, topic=topic, context=context
+        )
         try:
             response = await self._client.aio.models.generate_content(
                 model=_MODEL_NAME,
                 contents=user_prompt,
-                config=types.GenerateContentConfig(system_instruction=NOTE_SYSTEM_PROMPT),
+                config=types.GenerateContentConfig(
+                    system_instruction=NOTE_SYSTEM_PROMPT
+                ),
             )
-        except Exception as exc:  # noqa: BLE001 - normalize provider failures
+        except Exception as exc:
             raise GeminiError(f"Gemini note generation failed: {exc}") from exc
         if not response.text:
             raise GeminiError("Gemini returned empty notes.")
@@ -281,7 +301,7 @@ class GeminiClient:
             raise
         except (ValidationError, ValueError) as exc:
             raise GeminiError(f"Gemini returned invalid flashcards: {exc}") from exc
-        except Exception as exc:  # noqa: BLE001 - normalize provider failures
+        except Exception as exc:
             raise GeminiError(f"Gemini flashcard generation failed: {exc}") from exc
 
     async def generate_structured_note(
@@ -319,9 +339,13 @@ class GeminiClient:
         except GeminiError:
             raise
         except (ValidationError, ValueError) as exc:
-            raise GeminiError(f"Gemini returned invalid {material_type} content: {exc}") from exc
-        except Exception as exc:  # noqa: BLE001 - normalize provider failures
-            raise GeminiError(f"Gemini {material_type} generation failed: {exc}") from exc
+            raise GeminiError(
+                f"Gemini returned invalid {material_type} content: {exc}"
+            ) from exc
+        except Exception as exc:
+            raise GeminiError(
+                f"Gemini {material_type} generation failed: {exc}"
+            ) from exc
 
     async def generate_quiz(
         self,
@@ -331,6 +355,7 @@ class GeminiClient:
         question_types: list[str],
         count: int,
         difficulty: str,
+        difficulty_mix: dict[str, int] | None = None,
     ) -> str:
         """Generate a JSON array of quiz question objects via structured output.
 
@@ -345,6 +370,7 @@ class GeminiClient:
             question_types=question_types,
             count=count,
             difficulty=difficulty,
+            difficulty_mix=difficulty_mix,
         )
         try:
             response = await self._client.aio.models.generate_content(
@@ -364,7 +390,7 @@ class GeminiClient:
             raise
         except (ValidationError, ValueError) as exc:
             raise GeminiError(f"Gemini returned an invalid quiz: {exc}") from exc
-        except Exception as exc:  # noqa: BLE001 - normalize provider failures
+        except Exception as exc:
             raise GeminiError(f"Gemini quiz generation failed: {exc}") from exc
 
     async def grade_quiz_answers(self, *, items: list[GradingItemInput]) -> str:
@@ -395,8 +421,10 @@ class GeminiClient:
         except GeminiError:
             raise
         except (ValidationError, ValueError) as exc:
-            raise GeminiError(f"Gemini returned an invalid grading result: {exc}") from exc
-        except Exception as exc:  # noqa: BLE001 - normalize provider failures
+            raise GeminiError(
+                f"Gemini returned an invalid grading result: {exc}"
+            ) from exc
+        except Exception as exc:
             raise GeminiError(f"Gemini quiz grading failed: {exc}") from exc
 
     async def generate_internet_search_synthesis(
@@ -418,8 +446,10 @@ class GeminiClient:
                     system_instruction=INTERNET_SEARCH_SYSTEM_PROMPT
                 ),
             )
-        except Exception as exc:  # noqa: BLE001 - normalize provider failures
-            raise GeminiError(f"Gemini internet search synthesis failed: {exc}") from exc
+        except Exception as exc:
+            raise GeminiError(
+                f"Gemini internet search synthesis failed: {exc}"
+            ) from exc
         if not response.text:
             raise GeminiError("Gemini returned an empty internet search synthesis.")
         return response.text
@@ -440,27 +470,43 @@ class GeminiClient:
             response = await self._client.aio.models.generate_content(
                 model=_MODEL_NAME,
                 contents=user_prompt,
-                config=types.GenerateContentConfig(system_instruction=PAPER_SEARCH_SYSTEM_PROMPT),
+                config=types.GenerateContentConfig(
+                    system_instruction=PAPER_SEARCH_SYSTEM_PROMPT
+                ),
             )
-        except Exception as exc:  # noqa: BLE001 - normalize provider failures
+        except Exception as exc:
             raise GeminiError(f"Gemini paper search synthesis failed: {exc}") from exc
         if not response.text:
             raise GeminiError("Gemini returned an empty paper search synthesis.")
         return response.text
 
     async def stream_chat_response(
-        self, *, question: str, context: str = "", history: str = ""
+        self,
+        *,
+        question: str,
+        context: str = "",
+        history: str = "",
+        explanation_depth: str | None = None,
+        explanation_style: str | None = None,
     ) -> AsyncIterator[str]:
         """Stream a multi-turn chat answer as provider-generated text fragments."""
-        user_prompt = render_chat_prompt(question=question, context=context, history=history)
+        user_prompt = render_chat_prompt(
+            question=question,
+            context=context,
+            history=history,
+            explanation_depth=explanation_depth,
+            explanation_style=explanation_style,
+        )
         try:
             stream = await self._client.aio.models.generate_content_stream(
                 model=_MODEL_NAME,
                 contents=user_prompt,
-                config=types.GenerateContentConfig(system_instruction=CHAT_SYSTEM_PROMPT),
+                config=types.GenerateContentConfig(
+                    system_instruction=CHAT_SYSTEM_PROMPT
+                ),
             )
             async for response in stream:
                 if response.text:
                     yield response.text
-        except Exception as exc:  # noqa: BLE001 - normalize provider failures
+        except Exception as exc:
             raise GeminiError(f"Gemini streaming generation failed: {exc}") from exc

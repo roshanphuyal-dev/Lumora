@@ -1,6 +1,7 @@
 import { CheckCircle2, HelpCircle, XCircle } from "lucide-react"
 import type { AnswerReviewProps } from "@/components/quiz/questions/types"
 import type { MatchingAnswerPair, QuizAnswerValue } from "@/lib/quiz-attempts"
+import { CitationList } from "@/components/notebook/CitationList"
 
 const FREE_TEXT_TYPES = new Set(["short_answer", "long_answer", "case_study"])
 
@@ -22,7 +23,7 @@ function formatAnswer(value: QuizAnswerValue | null | undefined): string {
  * `components/quiz/questions/types.ts`). Correctness is always paired with an icon + text
  * label, never color alone (`.claude/rules/ui.md`).
  */
-export function AnswerReview({ question, answer }: AnswerReviewProps) {
+export function AnswerReview({ notebookId = "", question, answer }: AnswerReviewProps) {
   const isFreeText = FREE_TEXT_TYPES.has(question.question_type)
   const isCorrect = answer.is_correct
   const verdict =
@@ -74,10 +75,7 @@ export function AnswerReview({ question, answer }: AnswerReviewProps) {
       )}
 
       {question.citation && (
-        <div className="rounded bg-background/60 p-2 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">Source {question.citation.source_id}</span>
-          {question.citation.excerpt && <span className="mt-0.5 block">&ldquo;{question.citation.excerpt}&rdquo;</span>}
-        </div>
+        <CitationList notebookId={notebookId} citations={[question.citation]} label="Source" className="mt-0" />
       )}
     </div>
   )

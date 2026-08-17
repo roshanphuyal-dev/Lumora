@@ -70,7 +70,7 @@ Routing decisions are made once, at the orchestration layer, based on a `task_ty
 
 ### RAG Design
 
-- **Milestone 1 foundation implemented; retrieval not yet shipped**: [ADR 0014](adr/0014-phase-4-retrieval-personalization.md) fixes the implementation policy below. `RAG_ENABLED` is a global environment-driven flag, default off. The schema, parser-section preservation, chunking/indexing worker, and orchestrated `TEXT_EMBEDDING` call exist; query-time hybrid retrieval remains a later milestone.
+- **Hybrid retrieval and citations implemented**: [ADR 0014](adr/0014-phase-4-retrieval-personalization.md) fixes the policy below. `RAG_ENABLED` is global and default off. After the indexing foundation, notebook chat, `/ask`, notes, flashcards, and quiz generation fall back from inadequate/unavailable NotebookLM grounding to owner-scoped pgvector + PostgreSQL full-text retrieval, reciprocal-rank fusion, and backend-authored local citations. Clickable local citation panels resolve source title, locator, and chunk text in chat, notes, flashcards, and graded quiz review.
 - **Chunking**: documents split at semantic paragraph/heading boundaries at ingest time, preserving PDF-page/PPTX-slide locators. Initial target is 3,200 characters with 400-character overlap, tuned against a retrieval-evaluation fixture before release.
 - **Embeddings**: `gemini-embedding-001`, requested through the orchestration layer at 768 dimensions via Matryoshka truncation of its native 3072-dimensional output, stored in `pgvector` with model/dimension provenance. Jina fallback is deferred.
 - **Indexing lifecycle**: local RAG uses `pending`/`indexing`/`indexed`/`failed`, separate from parsing and NotebookLM source indexing. Existing documents are backfilled in resumable, rate-limited batches.
@@ -81,12 +81,10 @@ Routing decisions are made once, at the orchestration layer, based on a `task_ty
 ### Memory & Personalization
 
 - **Short-term**: conversation history within a session/chat, compressed before reuse.
-- **Accepted Phase 4 personalization design (not yet implemented)**: [ADR 0014](adr/0014-phase-4-retrieval-personalization.md) permits structured quiz/mastery evidence and confirmed preferences only. It prohibits free-form AI psychological profiles and separate profiling calls. `PERSONALIZATION_ENABLED` is present as a global, environment-driven, default-off rollout flag; personalization behavior remains a later milestone.
+- **Phase 4 personalization implemented behind a default-off gate**: [ADR 0014](adr/0014-phase-4-retrieval-personalization.md) permits structured quiz/mastery evidence and confirmed preferences only. `PERSONALIZATION_ENABLED` gates adaptive mixed-quiz generation and accepted explanation depth/style in `/ask` and notebook chat. Pending suggestions never affect prompts, and no free-form learner profile or separate profiling call exists.
 - **Long-term**: notebook-scoped mastery is derived deterministically from graded quiz answers with recency decay, difficulty weights, a neutral prior, and confidence. Existing weak-topic counts remain historical evidence.
-- **Personalization inputs**: weak topics, graded performance, accepted explanation depth/style, and revision history. Behavioral signals may create a pending preference suggestion but cannot affect prompts before student acceptance.
-- **Adaptive quizzes and recommendations**: apply only to newly generated quizzes; active attempts remain immutable. Topic/action/priority selection is deterministic, while AI may rewrite display wording only.
+- **Personalization inputs**: graded performance, derived mastery, and accepted explanation depth/style. Behavioral signals may create a pending preference suggestion but cannot affect prompts before student acceptance. Revision history is not implemented yet.
+- **Adaptive quizzes and recommendations**: newly generated mixed quizzes use the topic's live mastery band when evidence exists, persist whether adaptation was applied and its exact difficulty counts, and validate that generated tags match those counts. Active attempts remain immutable. Recommendation selection remains deterministic.
 
 ### Model Selection Heuristics
 Small/cheap model → formatting. Medium → summaries. NotebookLM → document understanding. Gemini → complex reasoning/teaching. Selection is automatic (orchestration layer), never hardcoded per-feature.
-
-<!-- TODO: replace accepted Phase 4 design status with measured implementation details as each milestone ships -->

@@ -91,7 +91,7 @@ describe("AnswerReview", () => {
     expect(screen.getByText("Nice work!")).toBeInTheDocument()
     expect(screen.getByText("Explanation")).toBeInTheDocument()
     expect(screen.getByText("4 is the sum of 2 and 2.")).toBeInTheDocument()
-    expect(screen.getByText("Source src-1")).toBeInTheDocument()
+    expect(screen.getByText("Notebook source 1")).toBeInTheDocument()
     expect(screen.getByText(/Two plus two equals four\./)).toBeInTheDocument()
   })
 

@@ -37,6 +37,15 @@ class NotebookSourceCreate(BaseModel):
     document_id: uuid.UUID
 
 
+class CitationChunkRead(BaseModel):
+    source_id: uuid.UUID
+    chunk_id: uuid.UUID
+    source_title: str
+    locator_kind: str | None = None
+    locator: int | None = None
+    text: str
+
+
 class NotebookDetail(NotebookRead):
     sources: list[NotebookSourceRead] = Field(default_factory=list)
 

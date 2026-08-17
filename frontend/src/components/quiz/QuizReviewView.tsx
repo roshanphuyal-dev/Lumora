@@ -84,7 +84,7 @@ export function QuizReviewView({ notebookId, attempt }: QuizReviewViewProps) {
                 onChange={() => {}}
                 disabled
               />
-              <AnswerReview question={question} answer={answer} />
+              <AnswerReview notebookId={notebookId} question={question} answer={answer} />
             </div>
           )
         })}

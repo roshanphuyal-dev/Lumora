@@ -100,6 +100,11 @@ function QuizRow({ quiz, notebookId }: { quiz: QuizRead; notebookId: string }) {
           <span className="text-xs text-muted-foreground">
             {quiz.question_count} {quiz.question_count === 1 ? "question" : "questions"} · {quiz.difficulty}
           </span>
+          {quiz.adaptation_applied && quiz.adaptive_difficulty_mix && (
+            <span className="text-xs text-muted-foreground">
+              Adapted · {quiz.adaptive_difficulty_mix.easy} easy, {quiz.adaptive_difficulty_mix.medium} medium, {quiz.adaptive_difficulty_mix.hard} hard
+            </span>
+          )}
         </div>
         <span className={`flex shrink-0 items-center gap-1 text-xs ${status.className}`}>
           <status.icon

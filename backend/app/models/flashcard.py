@@ -70,6 +70,6 @@ class Flashcard(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     front: Mapped[str] = mapped_column(Text, nullable=False)
     back: Mapped[str] = mapped_column(Text, nullable=False)
-    citation: Mapped[dict[str, str | None] | None] = mapped_column(JSONB, nullable=True)
+    citation: Mapped[dict[str, str | int | None] | None] = mapped_column(JSONB, nullable=True)
 
     flashcard_set: Mapped[FlashcardSet] = relationship(back_populates="flashcards")

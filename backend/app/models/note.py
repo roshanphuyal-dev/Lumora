@@ -76,7 +76,7 @@ class Note(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Populated instead of `content` for MNEMONICS/TIMELINE (a JSON list) and
     # COMPARISON_CHART (a single JSON object) -- null for every markdown material_type.
     content_json: Mapped[list[dict] | dict | None] = mapped_column(JSONB, nullable=True)
-    citations: Mapped[list[dict[str, str | None]]] = mapped_column(
+    citations: Mapped[list[dict[str, str | int | None]]] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

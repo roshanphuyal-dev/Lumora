@@ -1,19 +1,8 @@
-import { Plus, Target, TrendingUp, Flame } from "lucide-react"
+import { Plus } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
 import { NotebooksSection } from "@/components/dashboard/NotebooksSection"
 import { ResourceDialog } from "@/components/notebook/ResourceDialog"
-
-// Phase 1 supports upload + notebooks only (docs/ROADMAP.md). Weak topics, learning
-// progress, and streaks depend on quiz/evaluation (Phase 3-4) and have no real backend
-// yet — rendered as a quiet, clearly-labeled "not yet available" strip rather than
-// full stat widgets, so nothing here reads as a fabricated number
-// (docs/UI_UX.md: "progress should feel earned, not gamified-hollow").
-const UPCOMING = [
-  { icon: Target, label: "Weak topics" },
-  { icon: TrendingUp, label: "Learning progress" },
-  { icon: Flame, label: "Streaks" },
-] as const
+import { LearningOverview } from "@/components/dashboard/LearningOverview"
 
 export function DashboardPage() {
   return (
@@ -39,23 +28,8 @@ export function DashboardPage() {
 
       <NotebooksSection />
 
-      <section className="flex flex-col gap-1">
-        <h2 className="text-sm font-medium text-muted-foreground">Coming soon</h2>
-        <div className="rounded-md border border-border">
-          {UPCOMING.map(({ icon: Icon, label }, index) => (
-            <div key={label}>
-              {index > 0 && <Separator />}
-              <div className="flex items-center gap-2 px-3 py-2.5">
-                <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
-                <span className="text-sm text-muted-foreground">{label}</span>
-                <span className="ml-auto text-[10px] font-medium tracking-wide text-muted-foreground/70 uppercase">
-                  Soon
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+      <LearningOverview />
+
     </div>
   )
 }

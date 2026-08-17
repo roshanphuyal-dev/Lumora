@@ -1,5 +1,6 @@
 import uuid
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from ai.orchestrator.orchestrator import OrchestrationError
 from ai.orchestrator.schemas import AIResponse, Citation, ProviderName
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document, DocumentParseStatus
 from app.models.notebook import Notebook, NotebookSource, NotebookSourceIndexStatus
+from app.models.rag import Chunk, DocumentSection, SectionLocatorKind
 from app.models.user import User
 
 
@@ -69,6 +71,53 @@ async def test_create_and_list_notebooks(client: AsyncClient, unique_email: str)
     body = resp.json()
     assert body["total"] == 1
     assert body["items"][0]["name"] == "Biology 101"
+
+
+async def test_resolve_local_citation_is_owner_and_source_scoped(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    owner_email = "citation-owner@example.com"
+    intruder_email = "citation-intruder@example.com"
+    owner_token = await _register_and_login(client, owner_email)
+    intruder_token = await _register_and_login(client, intruder_email)
+    owner_id = await _user_id(db_session, owner_email)
+    notebook = Notebook(owner_id=owner_id, name="Citations")
+    document = await _create_document(
+        db_session,
+        owner_id,
+        parse_status=DocumentParseStatus.DONE,
+        filename="biology.pdf",
+    )
+    db_session.add(notebook)
+    await db_session.flush()
+    source = NotebookSource(notebook_id=notebook.id, document_id=document.id)
+    section = DocumentSection(
+        document_id=document.id,
+        ordinal=3,
+        locator_kind=SectionLocatorKind.PAGE,
+        text="Cellular respiration source text.",
+    )
+    db_session.add_all([source, section])
+    await db_session.flush()
+    chunk = Chunk(
+        document_id=document.id,
+        section_id=section.id,
+        ordinal=1,
+        text="Cellular respiration source text.",
+        content_hash="a" * 64,
+    )
+    db_session.add(chunk)
+    await db_session.commit()
+
+    path = f"/api/v1/notebooks/{notebook.id}/sources/{source.id}/chunks/{chunk.id}"
+    response = await client.get(path, headers=_auth(owner_token))
+    forbidden = await client.get(path, headers=_auth(intruder_token))
+
+    assert response.status_code == 200
+    assert response.json()["source_title"] == "biology.pdf"
+    assert response.json()["locator_kind"] == "page"
+    assert response.json()["locator"] == 3
+    assert forbidden.status_code == 404
 
 
 async def test_notebooks_are_isolated_per_user(client: AsyncClient) -> None:
@@ -308,7 +357,7 @@ async def test_ask_returns_content_and_provider(client: AsyncClient, unique_emai
         task_type=TaskType.TEACHING_EXPLANATION,
         provider=ProviderName.GEMINI,
         content="A mole is 6.022e23 particles.",
-        citations=[],
+        citations=[Citation(source_id="model-invented", chunk_id="model-invented")],
         metadata={},
     )
     with patch(
@@ -327,6 +376,38 @@ async def test_ask_returns_content_and_provider(client: AsyncClient, unique_emai
         "citations": [],
     }
     mock_run_task.assert_awaited_once()
+
+
+async def test_ask_passes_accepted_tutoring_preferences(
+    client: AsyncClient, unique_email: str
+) -> None:
+    token = await _register_and_login(client, unique_email)
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "Physics"}, headers=_auth(token)
+    )
+    fake_response = AIResponse(
+        task_type=TaskType.TEACHING_EXPLANATION,
+        provider=ProviderName.GEMINI,
+        content="A detailed explanation.",
+    )
+
+    with (
+        patch("app.services.notebook_service.run_task", return_value=fake_response) as run_task,
+        patch(
+            "app.services.notebook_service.get_tutoring_preferences",
+            new=AsyncMock(return_value=("detailed", "example_driven")),
+        ),
+    ):
+        response = await client.post(
+            f"/api/v1/notebooks/{notebook.json()['id']}/ask",
+            json={"question": "Explain momentum"},
+            headers=_auth(token),
+        )
+
+    assert response.status_code == 200
+    request = run_task.await_args.args[1]
+    assert request.explanation_depth == "detailed"
+    assert request.explanation_style == "example_driven"
 
 
 async def test_ask_grounds_answer_in_notebooklm_when_a_source_is_indexed(
@@ -400,6 +481,156 @@ async def test_ask_grounds_answer_in_notebooklm_when_a_source_is_indexed(
     assert teach_call.args[0] == TaskType.TEACHING_EXPLANATION
     assert teach_call.args[1].context == "Mitochondria is the powerhouse of the cell."
     assert teach_call.args[1].citations == [Citation(source_id="nlm-src-1")]
+
+
+async def test_ask_uses_local_fallback_only_when_notebooklm_is_inadequate(
+    client: AsyncClient, db_session: AsyncSession, unique_email: str
+) -> None:
+    token = await _register_and_login(client, unique_email)
+    user_id = await _user_id(db_session, unique_email)
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "Biology"}, headers=_auth(token)
+    )
+    notebook_id = notebook.json()["id"]
+
+    done_document = await _create_document(
+        db_session, user_id, parse_status=DocumentParseStatus.DONE
+    )
+    with patch("app.api.v1.notebooks.index_notebook_source_task.delay"):
+        attach_resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/sources",
+            json={"document_id": str(done_document.id)},
+            headers=_auth(token),
+        )
+    source_id = attach_resp.json()["id"]
+
+    notebook_row = await db_session.get(Notebook, uuid.UUID(notebook_id))
+    assert notebook_row is not None
+    notebook_row.notebooklm_notebook_id = "remote-nb-1"
+    source_row = await db_session.get(NotebookSource, uuid.UUID(source_id))
+    assert source_row is not None
+    source_row.indexing_status = NotebookSourceIndexStatus.INDEXED
+    await db_session.commit()
+
+    retrieval_response = AIResponse(
+        task_type=TaskType.NOTEBOOK_QUERY,
+        provider=ProviderName.NOTEBOOKLM,
+        content="Answer without citations",
+        citations=[],
+        metadata={},
+    )
+    teaching_response = AIResponse(
+        task_type=TaskType.TEACHING_EXPLANATION,
+        provider=ProviderName.GEMINI,
+        content="Grounded via local retrieval.",
+        citations=[Citation(source_id="model-invented", chunk_id="model-invented")],
+        metadata={},
+    )
+    local_citation = Citation(source_id="local-src-1", chunk_id="local-chunk-1")
+
+    with (
+        patch(
+            "app.services.notebook_service.run_task",
+            side_effect=[retrieval_response, teaching_response],
+        ) as mock_run_task,
+        patch(
+            "app.services.notebook_service.get_settings",
+            lambda: SimpleNamespace(rag_enabled=True),
+        ),
+        patch(
+            "app.services.notebook_service.rag_retrieval_service.retrieve",
+        ) as mock_retrieve,
+    ):
+        mock_retrieve.return_value = SimpleNamespace(
+            context="Local chunk context.", citations=[local_citation]
+        )
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/ask",
+            json={"question": "What does the mitochondria do?"},
+            headers=_auth(token),
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["content"] == "Grounded via local retrieval."
+    assert body["citations"] == [
+        {"source_id": "local-src-1", "chunk_id": "local-chunk-1", "excerpt": None}
+    ]
+
+    mock_retrieve.assert_awaited_once()
+    assert mock_retrieve.await_args.args[3] == "What does the mitochondria do?"
+    assert mock_run_task.await_count == 2
+    teach_call = mock_run_task.await_args_list[1]
+    assert teach_call.args[1].context == "Local chunk context."
+    assert teach_call.args[1].citations == [local_citation]
+
+
+async def test_ask_skips_local_fallback_when_notebooklm_is_adequate(
+    client: AsyncClient, db_session: AsyncSession, unique_email: str
+) -> None:
+    token = await _register_and_login(client, unique_email)
+    user_id = await _user_id(db_session, unique_email)
+
+    notebook = await client.post(
+        "/api/v1/notebooks", json={"name": "Biology"}, headers=_auth(token)
+    )
+    notebook_id = notebook.json()["id"]
+
+    done_document = await _create_document(
+        db_session, user_id, parse_status=DocumentParseStatus.DONE
+    )
+    with patch("app.api.v1.notebooks.index_notebook_source_task.delay"):
+        attach_resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/sources",
+            json={"document_id": str(done_document.id)},
+            headers=_auth(token),
+        )
+    source_id = attach_resp.json()["id"]
+
+    notebook_row = await db_session.get(Notebook, uuid.UUID(notebook_id))
+    assert notebook_row is not None
+    notebook_row.notebooklm_notebook_id = "remote-nb-1"
+    source_row = await db_session.get(NotebookSource, uuid.UUID(source_id))
+    assert source_row is not None
+    source_row.indexing_status = NotebookSourceIndexStatus.INDEXED
+    await db_session.commit()
+
+    retrieval_response = AIResponse(
+        task_type=TaskType.NOTEBOOK_QUERY,
+        provider=ProviderName.NOTEBOOKLM,
+        content="Mitochondria is the powerhouse of the cell.",
+        citations=[Citation(source_id="nlm-src-1")],
+        metadata={},
+    )
+    teaching_response = AIResponse(
+        task_type=TaskType.TEACHING_EXPLANATION,
+        provider=ProviderName.GEMINI,
+        content="The mitochondria produces the cell's energy (ATP).",
+        citations=[Citation(source_id="nlm-src-1")],
+        metadata={},
+    )
+
+    with (
+        patch(
+            "app.services.notebook_service.run_task",
+            side_effect=[retrieval_response, teaching_response],
+        ),
+        patch(
+            "app.services.notebook_service.get_settings",
+            lambda: SimpleNamespace(rag_enabled=True),
+        ),
+        patch("app.services.notebook_service.rag_retrieval_service.retrieve") as mock_retrieve,
+    ):
+        resp = await client.post(
+            f"/api/v1/notebooks/{notebook_id}/ask",
+            json={"question": "What does the mitochondria do?"},
+            headers=_auth(token),
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["content"] == "The mitochondria produces the cell's energy (ATP)."
+    mock_retrieve.assert_not_awaited()
 
 
 async def test_ask_falls_back_to_ungrounded_answer_when_notebooklm_retrieval_fails(

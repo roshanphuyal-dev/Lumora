@@ -5,6 +5,7 @@ from fastapi import APIRouter, Query, status
 from app.core.dependencies import CurrentUser, DbSession
 from app.schemas.course import Page
 from app.schemas.notebook import (
+    CitationChunkRead,
     NotebookAskRequest,
     NotebookAskResponse,
     NotebookCreate,
@@ -19,7 +20,7 @@ from app.schemas.notebook import (
     NotebookSourceCreate,
     NotebookSourceRead,
 )
-from app.services import notebook_service
+from app.services import notebook_service, rag_retrieval_service
 from app.workers.notebook_tasks import index_notebook_source_task
 
 router = APIRouter(prefix="/notebooks", tags=["notebooks"])
@@ -104,6 +105,22 @@ async def detach_source(
     notebook_id: uuid.UUID, source_id: uuid.UUID, current_user: CurrentUser, db: DbSession
 ) -> None:
     await notebook_service.detach_source(db, current_user.id, notebook_id, source_id)
+
+
+@router.get(
+    "/{notebook_id}/sources/{source_id}/chunks/{chunk_id}",
+    response_model=CitationChunkRead,
+)
+async def resolve_citation_chunk(
+    notebook_id: uuid.UUID,
+    source_id: uuid.UUID,
+    chunk_id: uuid.UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> CitationChunkRead:
+    return await rag_retrieval_service.resolve_citation_chunk(
+        db, current_user.id, notebook_id, source_id, chunk_id
+    )
 
 
 @router.post("/{notebook_id}/ask", response_model=NotebookAskResponse)

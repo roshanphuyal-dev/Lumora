@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ImageResultCard } from "@/components/notebook/chat/ImageResultCard"
 import { MessageRenderer } from "@/components/notebook/chat/MessageRenderer"
+import { CitationList } from "@/components/notebook/CitationList"
 import type { ChatMessageData } from "@/components/notebook/chat/types"
 import { useSearchTopicImage } from "@/hooks/use-image-search"
 import { ApiError } from "@/lib/api"
@@ -166,19 +167,8 @@ export const ChatMessage = memo(function ChatMessage({
         {!isUser && message.provider && (
           <p className="mt-1 text-xs text-muted-foreground">answered by {message.provider}</p>
         )}
-        {/* Notebook-grounded citations: small muted plain-text excerpts of the source chunk. */}
         {!isUser && !isExternalSearch && message.citations && message.citations.length > 0 && (
-          <ul className="mt-2 flex flex-col gap-1 border-l-2 border-border pl-2">
-            {message.citations.map((citation, index) => (
-              <li key={citation.chunk_id ?? `${citation.source_id ?? "citation"}-${index}`} className="text-xs text-muted-foreground">
-                {citation.excerpt
-                  ? `"${citation.excerpt}"`
-                  : citation.source_id
-                    ? `Source ${citation.source_id}`
-                    : "Notebook source"}
-              </li>
-            ))}
-          </ul>
+          <CitationList notebookId={notebookId} citations={message.citations} />
         )}
         {/* Web/paper-grounded citations: visually distinct card with clickable external
             links, since these are URLs a student would want to actually visit -- not

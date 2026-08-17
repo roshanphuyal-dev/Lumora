@@ -8,6 +8,7 @@ persistence, status transitions, and the per-question-type `type_data`/`correct_
 
 import json
 import uuid
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from ai.orchestrator.orchestrator import OrchestrationError
@@ -15,7 +16,6 @@ from ai.orchestrator.schemas import (
     AIResponse,
     Citation,
     InternetSearchRequest,
-    NotebookQueryRequest,
     ProviderName,
 )
 from ai.orchestrator.task_types import TaskType
@@ -26,7 +26,7 @@ from app.models.document import Document, DocumentParseStatus
 from app.models.notebook import Notebook, NotebookSource, NotebookSourceIndexStatus
 from app.models.quiz import Question, Quiz, QuizDifficulty, QuizStatus
 from app.models.user import User
-from app.workers.quiz_tasks import _generate_quiz
+from app.workers.quiz_tasks import _generate_quiz, difficulty_mix_for_mastery
 from tests.conftest import TestSessionLocal
 
 
@@ -101,6 +101,75 @@ def _mixed_items_json() -> str:
             },
         ]
     )
+
+
+def test_difficulty_mix_uses_adr_mastery_bands_and_exact_question_count() -> None:
+    assert difficulty_mix_for_mastery(39.99, 10) == {"easy": 5, "medium": 4, "hard": 1}
+    assert difficulty_mix_for_mastery(40, 10) == {"easy": 2, "medium": 6, "hard": 2}
+    assert difficulty_mix_for_mastery(69.99, 10) == {"easy": 2, "medium": 6, "hard": 2}
+    assert difficulty_mix_for_mastery(70, 10) == {"easy": 1, "medium": 4, "hard": 5}
+    assert sum(difficulty_mix_for_mastery(20, 7).values()) == 7
+
+
+async def test_generate_mixed_quiz_applies_topic_mastery_when_enabled(
+    db_session: AsyncSession,
+) -> None:
+    _, quiz = await _user_notebook_quiz(db_session, "adaptive-quiz@example.com")
+    response = AIResponse(
+        task_type=TaskType.QUIZ_GENERATION,
+        provider=ProviderName.GEMINI,
+        content=_mixed_items_json(),
+    )
+    mastery = SimpleNamespace(mastery_percent=35.0, evidence_count=3)
+
+    with (
+        patch("app.workers.quiz_tasks.celery_session_maker", TestSessionLocal),
+        patch("app.workers.quiz_tasks.run_task", new=AsyncMock(return_value=response)) as run_task,
+        patch(
+            "app.workers.quiz_tasks.learning_service.get_topic_mastery",
+            new=AsyncMock(return_value=mastery),
+        ),
+        patch(
+            "app.workers.quiz_tasks.get_settings",
+            return_value=SimpleNamespace(personalization_enabled=True),
+        ),
+    ):
+        await _generate_quiz(quiz.id)
+
+    generation_request = run_task.await_args.args[1]
+    assert generation_request.difficulty_mix == {"easy": 2, "medium": 2, "hard": 0}
+    await db_session.refresh(quiz)
+    assert quiz.adaptation_applied is True
+    assert quiz.adaptive_difficulty_mix == {"easy": 2, "medium": 2, "hard": 0}
+
+
+async def test_generate_quiz_reports_not_adapted_when_personalization_disabled(
+    db_session: AsyncSession,
+) -> None:
+    _, quiz = await _user_notebook_quiz(db_session, "non-adaptive-quiz@example.com")
+    response = AIResponse(
+        task_type=TaskType.QUIZ_GENERATION,
+        provider=ProviderName.GEMINI,
+        content=_mixed_items_json(),
+    )
+    mastery_lookup = AsyncMock()
+
+    with (
+        patch("app.workers.quiz_tasks.celery_session_maker", TestSessionLocal),
+        patch("app.workers.quiz_tasks.run_task", new=AsyncMock(return_value=response)) as run_task,
+        patch("app.workers.quiz_tasks.learning_service.get_topic_mastery", mastery_lookup),
+        patch(
+            "app.workers.quiz_tasks.get_settings",
+            return_value=SimpleNamespace(personalization_enabled=False),
+        ),
+    ):
+        await _generate_quiz(quiz.id)
+
+    mastery_lookup.assert_not_awaited()
+    assert run_task.await_args.args[1].difficulty_mix is None
+    await db_session.refresh(quiz)
+    assert quiz.adaptation_applied is False
+    assert quiz.adaptive_difficulty_mix is None
 
 
 async def test_generate_quiz_persists_ordered_questions_and_status_done(
@@ -360,14 +429,6 @@ async def test_generate_quiz_with_web_search_merges_context_and_citations(
     quiz_generation_requests: list[object] = []
 
     async def _fake_run_task(task_type: TaskType, request: object) -> AIResponse:
-        if task_type is TaskType.NOTEBOOK_QUERY:
-            assert isinstance(request, NotebookQueryRequest)
-            return AIResponse(
-                task_type=TaskType.NOTEBOOK_QUERY,
-                provider=ProviderName.GEMINI,
-                content="Notebook material about cells.",
-                citations=[notebook_citation],
-            )
         if task_type is TaskType.INTERNET_SEARCH:
             assert isinstance(request, InternetSearchRequest)
             assert request.query == "Cells"  # quiz.topic or quiz.title, untouched
@@ -389,6 +450,17 @@ async def test_generate_quiz_with_web_search_merges_context_and_citations(
     with (
         patch("app.workers.quiz_tasks.celery_session_maker", TestSessionLocal),
         patch("app.workers.quiz_tasks.run_task", side_effect=_fake_run_task),
+        patch(
+            "app.services.generation_grounding_service.run_task",
+            new=AsyncMock(
+                return_value=AIResponse(
+                    task_type=TaskType.NOTEBOOK_QUERY,
+                    provider=ProviderName.GEMINI,
+                    content="Notebook material about cells.",
+                    citations=[notebook_citation],
+                )
+            ),
+        ),
     ):
         await _generate_quiz(quiz.id)
 

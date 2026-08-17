@@ -15,6 +15,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.quiz import Question, QuestionType, Quiz, QuizStatus
 from app.models.quiz_attempt import QuizAttempt, QuizAttemptAnswer, QuizAttemptStatus
 from app.schemas.course import PageResult
@@ -25,6 +26,7 @@ from app.schemas.quiz_attempt import (
     QuizAttemptRead,
     QuizAttemptReviewRead,
 )
+from app.services.learning_service import record_attempt_evidence, record_quiz_completed_activity
 from app.services.quiz_service import get_owned_quiz
 from app.workers.quiz_grading_tasks import grade_quiz_attempt_task
 
@@ -232,7 +234,7 @@ async def submit_attempt(
             answer_rows.append(
                 QuizAttemptAnswer(
                     attempt_id=attempt.id,
-                    question_id=question.id,
+                    question=question,
                     student_answer=student_answer,
                     is_correct=None,
                     score=Decimal("0"),
@@ -245,7 +247,7 @@ async def submit_attempt(
             answer_rows.append(
                 QuizAttemptAnswer(
                     attempt_id=attempt.id,
-                    question_id=question.id,
+                    question=question,
                     student_answer=student_answer,
                     is_correct=is_correct,
                     score=Decimal("1") if is_correct else Decimal("0"),
@@ -272,6 +274,11 @@ async def submit_attempt(
         attempt.graded_at = now
         attempt.score = sum((row.score for row in answer_rows), Decimal("0"))
         attempt.max_score = Decimal(len(answer_rows))
+        if get_settings().personalization_enabled:
+            await record_attempt_evidence(
+                db, attempt, quiz.notebook_id, answer_rows, observed_at=now
+            )
+            await record_quiz_completed_activity(db, attempt, quiz.notebook_id, occurred_at=now)
         await db.commit()
 
     await db.refresh(attempt)

@@ -6,8 +6,10 @@ from app.api.v1 import (
     courses,
     documents,
     flashcards,
+    learning,
     notebooks,
     notes,
+    personalization,
     quiz_attempts,
     quizzes,
     studio,
@@ -26,3 +28,7 @@ api_router.include_router(flashcards.router)
 api_router.include_router(studio.router)
 api_router.include_router(quizzes.router)
 api_router.include_router(quiz_attempts.router)
+api_router.include_router(learning.router)
+api_router.include_router(learning.user_router)
+api_router.include_router(personalization.preferences_router)
+api_router.include_router(personalization.recommendations_router)

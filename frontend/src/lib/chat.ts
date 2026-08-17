@@ -8,6 +8,9 @@ export interface ChatCitation {
   source_id?: string
   chunk_id?: string | null
   excerpt?: string | null
+  source_title?: string | null
+  locator_kind?: string | null
+  locator?: number | null
 }
 
 export interface MessageImageResult {

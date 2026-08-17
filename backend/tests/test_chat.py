@@ -1,5 +1,6 @@
 import json
 import uuid
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -256,6 +257,92 @@ async def test_prepare_stream_uses_grounding_and_swallows_retrieval_errors(
     run_task.assert_awaited_once()
     assert fallback_request.context == ""
     assert fallback_request.citations == []
+
+
+async def test_prepare_stream_uses_local_fallback_only_when_notebooklm_is_inadequate(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    unique_email: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _register_and_login(client, unique_email)
+    owner = await _user(db_session, unique_email)
+    notebook = await _notebook(db_session, owner, notebooklm_notebook_id="remote-notebook")
+    await _add_source(db_session, owner, notebook, NotebookSourceIndexStatus.INDEXED)
+    conversation = await _conversation(db_session, owner, notebook)
+    notebooklm = AIResponse(
+        task_type=TaskType.NOTEBOOK_QUERY,
+        provider=ProviderName.NOTEBOOKLM,
+        content="Answer without citations",
+        citations=[],
+    )
+    citation = Citation(source_id=str(uuid.uuid4()), chunk_id=str(uuid.uuid4()))
+    local = AsyncMock(return_value=SimpleNamespace(context="Local context", citations=[citation]))
+    monkeypatch.setattr(chat_service, "run_task", AsyncMock(return_value=notebooklm))
+    monkeypatch.setattr(chat_service.rag_retrieval_service, "retrieve", local)
+    monkeypatch.setattr(chat_service, "get_settings", lambda: SimpleNamespace(rag_enabled=True))
+
+    _, request = await chat_service.prepare_stream(
+        db_session, owner.id, notebook.id, conversation.id, "Ground this"
+    )
+
+    local.assert_awaited_once_with(db_session, owner.id, notebook.id, "Ground this")
+    assert request.context == "Local context"
+    assert request.citations == [citation]
+
+
+async def test_prepare_stream_skips_local_when_notebooklm_is_adequate(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    unique_email: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _register_and_login(client, unique_email)
+    owner = await _user(db_session, unique_email)
+    notebook = await _notebook(db_session, owner, notebooklm_notebook_id="remote-notebook")
+    await _add_source(db_session, owner, notebook, NotebookSourceIndexStatus.INDEXED)
+    conversation = await _conversation(db_session, owner, notebook)
+    citation = Citation(source_id="notebooklm-source")
+    notebooklm = AIResponse(
+        task_type=TaskType.NOTEBOOK_QUERY,
+        provider=ProviderName.NOTEBOOKLM,
+        content="Grounded answer",
+        citations=[citation],
+    )
+    local = AsyncMock()
+    monkeypatch.setattr(chat_service, "run_task", AsyncMock(return_value=notebooklm))
+    monkeypatch.setattr(chat_service.rag_retrieval_service, "retrieve", local)
+    monkeypatch.setattr(chat_service, "get_settings", lambda: SimpleNamespace(rag_enabled=True))
+
+    _, request = await chat_service.prepare_stream(
+        db_session, owner.id, notebook.id, conversation.id, "Ground this"
+    )
+
+    local.assert_not_awaited()
+    assert request.context == "Grounded answer"
+    assert request.citations == [citation]
+
+
+async def test_prepare_stream_applies_accepted_tutoring_preferences(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    unique_email: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _register_and_login(client, unique_email)
+    owner = await _user(db_session, unique_email)
+    notebook = await _notebook(db_session, owner)
+    conversation = await _conversation(db_session, owner, notebook)
+    preferences = AsyncMock(return_value=("detailed", "step_by_step"))
+    monkeypatch.setattr(chat_service.notebook_service, "get_tutoring_preferences", preferences)
+
+    _, request = await chat_service.prepare_stream(
+        db_session, owner.id, notebook.id, conversation.id, "Explain this"
+    )
+
+    preferences.assert_awaited_once_with(db_session, owner.id)
+    assert request.explanation_depth == "detailed"
+    assert request.explanation_style == "step_by_step"
 
 
 async def test_stream_response_yields_sse_and_persists_assistant(

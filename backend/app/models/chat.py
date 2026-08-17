@@ -79,7 +79,7 @@ class Message(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    citations: Mapped[list[dict[str, str | None]]] = mapped_column(
+    citations: Mapped[list[dict[str, str | int | None]]] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
     image_result: Mapped[dict[str, str] | None] = mapped_column(JSONB, nullable=True)

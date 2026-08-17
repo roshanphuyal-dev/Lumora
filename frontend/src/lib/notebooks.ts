@@ -64,6 +64,28 @@ export interface AskCitation {
   source_id: string
   chunk_id: string | null
   excerpt: string | null
+  source_title?: string | null
+  locator_kind?: string | null
+  locator?: number | null
+}
+
+export interface CitationChunk {
+  source_id: string
+  chunk_id: string
+  source_title: string
+  locator_kind: string | null
+  locator: number | null
+  text: string
+}
+
+export function resolveCitationChunk(
+  notebookId: string,
+  sourceId: string,
+  chunkId: string,
+): Promise<CitationChunk> {
+  return apiFetch<CitationChunk>(
+    `/notebooks/${notebookId}/sources/${sourceId}/chunks/${chunkId}`,
+  )
 }
 
 export interface AskResponse {

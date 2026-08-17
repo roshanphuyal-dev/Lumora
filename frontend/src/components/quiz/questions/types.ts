@@ -22,6 +22,7 @@ export interface QuestionAnswerProps {
 }
 
 export interface AnswerReviewProps {
+  notebookId?: string
   question: QuestionReviewRead
   answer: QuizAttemptAnswerReview
 }

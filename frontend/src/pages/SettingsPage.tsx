@@ -9,6 +9,7 @@ import { ApiError } from "@/lib/api"
 import { useMe } from "@/hooks/use-me"
 import { useUpdateProfile } from "@/hooks/use-update-profile"
 import { THEME_ACCENTS, useTheme, type ThemeAccent, type ThemeMode } from "@/hooks/use-theme"
+import { LearningPreferencesSection } from "@/components/settings/LearningPreferencesSection"
 
 interface SettingsFormValues {
   fullName: string
@@ -158,6 +159,8 @@ export function SettingsPage() {
       )}
 
       <AppearanceSection />
+
+      <LearningPreferencesSection />
     </div>
   )
 }

@@ -3,9 +3,18 @@ import uuid
 from typing import TYPE_CHECKING
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Computed,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -63,6 +72,7 @@ class Chunk(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("document_id", "ordinal", name="uq_chunks_document_ordinal"),
         Index("ix_chunks_document_content_hash", "document_id", "content_hash"),
+        Index("ix_chunks_search_vector_gin", "search_vector", postgresql_using="gin"),
         CheckConstraint("ordinal > 0", name="ck_chunks_ordinal_positive"),
     )
 
@@ -80,6 +90,11 @@ class Chunk(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    search_vector: Mapped[str] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('english', text)", persisted=True),
+        nullable=False,
+    )
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
     document: Mapped["Document"] = relationship(back_populates="chunks")

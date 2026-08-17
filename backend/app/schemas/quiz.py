@@ -81,6 +81,8 @@ class QuizRead(BaseModel):
     difficulty: QuizDifficulty
     time_limit_seconds: int | None
     include_web_search: bool
+    adaptation_applied: bool
+    adaptive_difficulty_mix: dict[str, int] | None
     error_message: str | None
     questions: list[QuestionRead] = Field(default_factory=list)
     created_at: datetime

@@ -34,6 +34,13 @@ class Citation(BaseModel):
     source_id: str
     chunk_id: str | None = None
     excerpt: str | None = None
+    source_title: str | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    locator_kind: str | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    locator: int | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class AIResponse(BaseModel):
@@ -115,6 +122,8 @@ class TeachingExplanationRequest(BaseModel):
     question: str
     context: str = ""
     citations: list[Citation] = Field(default_factory=list)
+    explanation_depth: str | None = None
+    explanation_style: str | None = None
 
 
 class ChatResponseRequest(BaseModel):
@@ -124,6 +133,8 @@ class ChatResponseRequest(BaseModel):
     context: str = ""
     history: str = ""
     citations: list[Citation] = Field(default_factory=list)
+    explanation_depth: str | None = None
+    explanation_style: str | None = None
 
 
 class AIStreamChunk(BaseModel):
@@ -313,6 +324,7 @@ class QuizGenerationRequest(BaseModel):
     question_types: list[str] = Field(default_factory=lambda: ["mcq"])
     count: int = 10
     difficulty: str = "mixed"
+    difficulty_mix: dict[str, int] | None = None
 
 
 class GradingItem(BaseModel):

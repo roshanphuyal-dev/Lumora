@@ -22,11 +22,13 @@ The testing strategy reference: what gets tested, how, and with what tools — s
 - Integration tests: real Postgres (Docker, not sqlite-in-memory) for anything touching the DB — don't mock the database (mocked-DB tests have historically diverged from real migration behavior in similar stacks; catch schema issues for real).
 - AI provider calls (Gemini/NotebookLM/OpenRouter/search APIs): mocked/recorded (VCR-style) in unit tests — these are the genuinely external/costly dependencies worth mocking. A small set of real-call smoke tests should run separately (manually or on a schedule), not on every PR, to avoid burning API budget.
 - Run: `cd backend && uv run pytest`
+- Phase 4 coverage includes deterministic mastery math/decay, evidence idempotency and ownership, progress/quiz analytics, preference suggestion acceptance boundaries, deterministic recommendation fields, adaptive difficulty counts, hybrid retrieval/rank fusion, and citation ownership. These use the real Postgres test database; provider calls remain mocked.
 
 ### Frontend
 - Component tests: Vitest + React Testing Library.
 - E2E: Playwright for critical golden paths (upload → notebook → generate notes; quiz attempt → submission → score) once those flows exist.
 - Run: `cd frontend && pnpm test` (unit/component), `pnpm test:e2e` (once configured).
+- Phase 4 component coverage includes citation disclosure/resolution, progress and recommendation states, preference/suggestion controls, and quiz adaptation status. A responsive light/dark manual browser pass remains required before Phase 4 is marked Done.
 
 ### Coverage Expectations
 - New business logic (backend services, AI orchestration, quiz grading) ships with unit tests in the same PR.

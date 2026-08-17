@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
+import { CitationList } from "@/components/notebook/CitationList"
 import { useCreateNote, useDeleteNote, useNotes } from "@/hooks/use-notes"
 import { ApiError } from "@/lib/api"
 import type { Citation, GenerationStatus, MaterialType, NoteRead } from "@/lib/notes"
@@ -99,20 +100,11 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback
 }
 
-function CitationBox({ citation }: { citation: Citation }) {
-  return (
-    <div className="mt-2 rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">
-      <span className="font-medium text-foreground">Source {citation.source_id}</span>
-      {citation.excerpt && <span className="mt-0.5 block">“{citation.excerpt}”</span>}
-    </div>
-  )
-}
-
 function InvalidContent({ label }: { label: string }) {
   return <p className="text-sm text-destructive" role="alert">This {label.toLowerCase()} couldn't be displayed because its data is invalid.</p>
 }
 
-function StructuredContent({ note }: { note: NoteRead }) {
+function StructuredContent({ note, notebookId }: { note: NoteRead; notebookId: string }) {
   if (!isStructuredNoteItems(note.content_json)) return <InvalidContent label={TYPE_META[note.material_type].label} />
   const isTimeline = note.material_type === "timeline"
 
@@ -124,7 +116,7 @@ function StructuredContent({ note }: { note: NoteRead }) {
           <p className="font-serif text-sm font-semibold text-foreground">{item.label}</p>
           <p className="mt-0.5 text-sm font-medium text-foreground">{item.value}</p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{item.detail}</p>
-          {item.citation && <CitationBox citation={item.citation} />}
+          {item.citation && <CitationList notebookId={notebookId} citations={[item.citation]} label="Source" className="mt-2" />}
         </li>
       ))}
     </ol>
@@ -161,8 +153,8 @@ function ComparisonChart({ note }: { note: NoteRead }) {
   )
 }
 
-function NoteContent({ note }: { note: NoteRead }) {
-  if (note.material_type === "mnemonics" || note.material_type === "timeline") return <StructuredContent note={note} />
+function NoteContent({ note, notebookId }: { note: NoteRead; notebookId: string }) {
+  if (note.material_type === "mnemonics" || note.material_type === "timeline") return <StructuredContent note={note} notebookId={notebookId} />
   if (note.material_type === "comparison_chart") return <ComparisonChart note={note} />
   if (!note.content) return null
 
@@ -171,19 +163,7 @@ function NoteContent({ note }: { note: NoteRead }) {
       <div className="min-w-0 font-serif text-sm leading-relaxed text-foreground [&_h1]:mb-2 [&_h1]:mt-4 [&_h1]:text-lg [&_h1]:font-semibold [&_h1]:first:mt-0 [&_h2]:mb-1 [&_h2]:mt-3 [&_h2]:text-base [&_h2]:font-semibold [&_p]:mb-2 [&_p]:last:mb-0 [&_ul]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_blockquote]:border-l [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_table]:mb-2 [&_table]:w-full [&_table]:text-xs [&_th]:border-b [&_th]:border-border [&_th]:py-1 [&_th]:text-left [&_td]:border-b [&_td]:border-border [&_td]:py-1">
         <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>{note.content}</Markdown>
       </div>
-      {note.citations.length > 0 && (
-        <div className="mt-4 rounded-md bg-muted/50 p-3">
-          <h4 className="mb-2 text-xs font-medium text-foreground">Sources</h4>
-          <ul className="flex flex-col gap-2">
-            {note.citations.map((citation, index) => (
-              <li key={citation.chunk_id ?? `${citation.source_id}-${index}`} className="text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">Source {citation.source_id}</span>
-                {citation.excerpt && <span className="mt-0.5 block">“{citation.excerpt}”</span>}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <CitationList notebookId={notebookId} citations={note.citations} className="mt-4" />
     </>
   )
 }
@@ -260,7 +240,7 @@ function NoteRow({ note, notebookId }: { note: NoteRead; notebookId: string }) {
       )}
       {expanded && (
         <div className="border-t border-border px-4 py-4">
-          <NoteContent note={note} />
+          <NoteContent note={note} notebookId={notebookId} />
         </div>
       )}
     </div>

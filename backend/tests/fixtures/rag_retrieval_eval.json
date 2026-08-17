@@ -1,0 +1,39 @@
+{
+  "description": "Deterministic hybrid-ranking smoke set. Channel rankings are frozen inputs so CI never calls an embedding provider.",
+  "cases": [
+    {
+      "query": "How does cellular respiration produce ATP?",
+      "relevant_chunk_ids": ["00000000-0000-0000-0000-000000000002"],
+      "vector_ranking": [
+        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000002",
+        "00000000-0000-0000-0000-000000000004"
+      ],
+      "text_ranking": [
+        "00000000-0000-0000-0000-000000000002",
+        "00000000-0000-0000-0000-000000000003"
+      ]
+    },
+    {
+      "query": "What is Newton's second law?",
+      "relevant_chunk_ids": ["00000000-0000-0000-0000-000000000005"],
+      "vector_ranking": [
+        "00000000-0000-0000-0000-000000000006",
+        "00000000-0000-0000-0000-000000000005"
+      ],
+      "text_ranking": [
+        "00000000-0000-0000-0000-000000000005",
+        "00000000-0000-0000-0000-000000000007"
+      ]
+    },
+    {
+      "query": "Explain the role of habeas corpus",
+      "relevant_chunk_ids": ["00000000-0000-0000-0000-000000000008"],
+      "vector_ranking": [
+        "00000000-0000-0000-0000-000000000008",
+        "00000000-0000-0000-0000-000000000009"
+      ],
+      "text_ranking": []
+    }
+  ]
+}

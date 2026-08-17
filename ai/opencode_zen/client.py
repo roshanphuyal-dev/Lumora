@@ -22,7 +22,7 @@ import os
 
 import httpx
 
-from ai.prompts.teaching_explanation_v1 import SYSTEM_PROMPT, render_user_prompt
+from ai.prompts.teaching_explanation_v2 import SYSTEM_PROMPT, render_user_prompt
 
 _API_URL = "https://opencode.ai/zen/v1/chat/completions"
 _MODEL_NAME = "deepseek-v4-flash-free"
@@ -44,7 +44,14 @@ class OpenCodeZenClient:
             )
         self._api_key = resolved_key
 
-    async def generate_teaching_explanation(self, question: str, context: str = "") -> str:
+    async def generate_teaching_explanation(
+        self,
+        question: str,
+        context: str = "",
+        *,
+        explanation_depth: str | None = None,
+        explanation_style: str | None = None,
+    ) -> str:
         """Ask an OpenCode Zen free model to explain `question`, optionally grounded in `context`.
 
         Uses the same named prompt template as `ai.gemini.client.GeminiClient` (`ai/prompts/
@@ -52,7 +59,12 @@ class OpenCodeZenClient:
         contract — feature code shouldn't see a difference beyond which provider is stamped
         on the response (`ai/orchestrator/schemas.py:ProviderName`).
         """
-        user_prompt = render_user_prompt(question=question, context=context)
+        user_prompt = render_user_prompt(
+            question=question,
+            context=context,
+            explanation_depth=explanation_depth,
+            explanation_style=explanation_style,
+        )
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as http_client:
                 response = await http_client.post(

@@ -2,7 +2,7 @@
 
 Production-quality AI-powered personal tutor. Turns any learning material — PDFs, slides, documents, images, URLs — into personalized study resources, and adapts to each student's strengths and weaknesses over time through long-term memory, retrieval-augmented grounding, and intelligent tutoring.
 
-> Status: early development (Phase 1 — see [Roadmap](#roadmap)).
+> Status: active development. Phases 1–3 are implemented; Phase 4 is in progress behind default-off rollout flags and still requires full-stack, manual-browser, and live-provider validation. See [Roadmap](#roadmap).
 
 ## Screenshots
 
@@ -20,7 +20,7 @@ Production-quality AI-powered personal tutor. Turns any learning material — PD
 - **AI chat tutor** — Socratic teaching, follow-ups, multi-document comparison, source citation
 - **Internet research** — current info, papers, images, fact verification (Tavily/Brave)
 - **Overleaf/LaTeX export** — notes, assignments, reports, formula sheets
-- **Progress tracking & analytics** — mastery, streaks, heatmaps, improvement trends
+- **Progress tracking & analytics** — mastery, quiz trends, bounded study time, UTC streaks, revision history, and activity heatmaps
 
 Full feature catalogue: [`docs/FEATURES.md`](docs/FEATURES.md). Full product vision: [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md).
 

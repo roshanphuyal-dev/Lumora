@@ -26,11 +26,27 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import get_settings
 from app.models.document import Document, DocumentParseStatus
 from app.models.notebook import Notebook, NotebookSource, NotebookSourceIndexStatus
 from app.schemas.course import PageResult
+from app.services import rag_retrieval_service
 
 logger = logging.getLogger(__name__)
+
+
+async def get_tutoring_preferences(
+    db: AsyncSession, user_id: uuid.UUID
+) -> tuple[str | None, str | None]:
+    """Return only explicit accepted preferences when personalization is enabled."""
+    if not getattr(get_settings(), "personalization_enabled", False):
+        return None, None
+    # personalization_service uses this module's owner-scoped notebook lookup, so keep
+    # this import local to avoid a module import cycle.
+    from app.services import personalization_service
+
+    preferences = await personalization_service.get_preferences(db, user_id)
+    return preferences.explanation_depth, preferences.explanation_style
 
 
 async def create_notebook(
@@ -119,6 +135,7 @@ async def ask_question(
     has_indexed_source = any(
         source.indexing_status == NotebookSourceIndexStatus.INDEXED for source in notebook.sources
     )
+    notebooklm_adequate = False
     if notebook.notebooklm_notebook_id and has_indexed_source:
         try:
             retrieval = await run_task(
@@ -134,13 +151,34 @@ async def ask_question(
                 exc_info=True,
             )
         else:
+            notebooklm_adequate = bool(retrieval.content.strip() and retrieval.citations)
             context = retrieval.content
             citations = retrieval.citations
 
+    if get_settings().rag_enabled and not notebooklm_adequate:
+        try:
+            local = await rag_retrieval_service.retrieve(db, owner_id, notebook_id, question)
+        except (OrchestrationError, rag_retrieval_service.LocalRetrievalError):
+            logger.warning(
+                "Local retrieval failed for notebook %s; falling back to an ungrounded answer",
+                notebook_id,
+                exc_info=True,
+            )
+        else:
+            context = local.context
+            citations = local.citations
+
     try:
+        explanation_depth, explanation_style = await get_tutoring_preferences(db, owner_id)
         response = await run_task(
             TaskType.TEACHING_EXPLANATION,
-            TeachingExplanationRequest(question=question, context=context, citations=citations),
+            TeachingExplanationRequest(
+                question=question,
+                context=context,
+                citations=citations,
+                explanation_depth=explanation_depth,
+                explanation_style=explanation_style,
+            ),
         )
     except OrchestrationError as exc:
         raise HTTPException(
@@ -148,7 +186,9 @@ async def ask_question(
             detail=f"Couldn't get an answer right now: {exc}",
         ) from exc
 
-    return response.content, response.provider.value, response.citations
+    # Citation authority comes from the retrieval step. The teaching model may format
+    # the answer, but it cannot introduce or replace source/chunk identifiers.
+    return response.content, response.provider.value, citations
 
 
 async def search_web(

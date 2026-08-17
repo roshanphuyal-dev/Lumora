@@ -46,14 +46,14 @@ Not built: `TaskType.TOPIC_IMAGE_SEARCH` (Wikimedia/Openverse, ADR 0010, see Int
 ### Quiz Engine (Phase 3)
 Done: `QuizTakingView`/`QuizReviewView` (`frontend/src/components/quiz/`) — timer, question navigation, per-question autosave (`PATCH .../attempts/{id}`, rejects past the time limit rather than auto-submitting), submission, randomized question order per attempt, and a post-grading review view with per-question feedback (`AnswerReview.tsx`).
 
-Not built: **adaptive question selection.** Only difficulty *tagging* exists (assigned once at quiz-generation time, static thereafter) — no logic selects/adjusts which questions a student sees based on prior performance. Deferred to Phase 4 per `docs/ROADMAP.md`'s original plan; don't read "adaptive difficulty" in the Quiz Generator feature above as this.
+Done behind `PERSONALIZATION_ENABLED`: **adaptive generation for new mixed quizzes.** Topic mastery selects ADR 0014's exact easy/medium/hard mix, generated difficulty tags are validated against it, and the quiz records whether adaptation was applied. Insufficient evidence preserves the normal mixed request. Existing quizzes and active attempts are never changed; this adapts generation, not question order during an attempt.
 
 Caveat: the quiz-taking UI was never verified in a live browser (Chrome extension had no connected browser during the milestones that built/reviewed it) — type-checked and unit-tested only, not manually exercised end-to-end per `.claude/rules/testing.md`'s "UI changes are manually exercised" expectation. Vitest/RTL infrastructure is now set up (`docs/TESTING.md`) with initial coverage for `QuizTakingView` and `AnswerReview` (`frontend/src/components/quiz/*.test.tsx`), but that's not a substitute for the still-outstanding manual browser pass.
 
 ### AI Evaluation (Phase 3–4)
 Done: score, explanation, and per-question AI feedback for free-text answers (`short_answer`/`long_answer`/`case_study`, one batched `TaskType.QUIZ_GRADING` call per attempt, `docs/adr/0011-quiz-evaluation-scoring-design.md`). Deterministic scoring (no AI call) for objective types. Weak-topic tagging now covers objective types too: `Question.topic` (`docs/DATABASE.md#core-tables`) is populated by the `QUIZ_GENERATION` prompt at generation time and carried onto `topic_tag` by deterministic grading (`backend/app/services/quiz_attempt_service.py`), so `weak_topics.missed_count` no longer undercounts misses concentrated in objective questions.
 
-Not built: improvement plan, learning recommendations — no Phase 3/4 code surfaces these yet; Progress/Analytics tables are not updated by quiz grading either (`docs/AI_WORKFLOWS.md#6`, steps 4-5).
+Done behind `PERSONALIZATION_ENABLED`: graded answers produce structured learning evidence and derived mastery; deterministic, owner-scoped recommendations provide review, quiz, or challenge actions without allowing a model to change action, priority, topic, URL, or rationale.
 
 ### AI Chat (Phase 2–4)
 Ask questions, explain simply/deeply, generate examples, follow-ups, Socratic teaching, cite sources, compare documents, continue conversations.
@@ -69,10 +69,13 @@ Not built: `TaskType.TOPIC_IMAGE_SEARCH` still isn't wired into quiz generation 
 LaTeX notes, assignments, reports, formula sheets, tables, figures. Not started — distinct from the plain PDF export already shipped for AI Chat (client-side, from the rendered DOM, `frontend/src/lib/chat-export.ts`), which is a generic conversation export, not a LaTeX/Overleaf pipeline for generated study materials.
 
 ### Progress Tracking (Phase 3–4)
-Daily study time, quiz scores, topic mastery, weakness detection, learning streak, revision history.
+Implemented: quiz score history, deterministic topic mastery/confidence, weakness detection, notebook progress summaries, bounded study-time activity, UTC-date learning streaks, and factual revision history.
 
 ### Analytics (Phase 4)
-Topic accuracy, time spent, performance graphs, improvement trends, learning heatmaps.
+Implemented: mastery/progress summaries, quiz-performance trends, time-spent analytics, study heatmaps, and paginated revision history in the API and dashboard. Notebook study time counts visible activity only, flushes bounded idempotent chunks, and ignores very short sessions.
+
+### Personalization & Recommendations (Phase 4)
+Implemented behind `PERSONALIZATION_ENABLED`: explicit user-scoped explanation depth/style, deterministic behavioral suggestions that remain pending until accepted, accepted-preference prompt adaptation, deterministic mastery-based recommendations, and adaptive mixed-quiz generation. No free-form learner profile or profiling-model call is stored.
 
 ### Future / Phase 5+
 Voice tutor, speech recognition, AI whiteboard, diagram generator, YouTube summarizer, research assistant, coding tutor, math solver, study planner + calendar integration, mobile app, offline sync, AI debate mode, AI interview mode, AI mock exams.

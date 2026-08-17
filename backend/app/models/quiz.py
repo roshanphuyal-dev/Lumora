@@ -102,6 +102,10 @@ class Quiz(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     include_web_search: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    adaptation_applied: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    adaptive_difficulty_mix: Mapped[dict[str, int] | None] = mapped_column(JSONB, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     notebook: Mapped["Notebook"] = relationship(back_populates="quizzes")
@@ -169,7 +173,7 @@ class Question(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     # Source chunk reference (source_id/chunk_id/excerpt), per .claude/rules/ai.md
     # citation-preservation rule -- same shape as Flashcard.citation.
-    citation: Mapped[dict[str, str | None] | None] = mapped_column(JSONB, nullable=True)
+    citation: Mapped[dict[str, str | int | None] | None] = mapped_column(JSONB, nullable=True)
 
     quiz: Mapped[Quiz] = relationship(back_populates="questions")
     attempt_answers: Mapped[list["QuizAttemptAnswer"]] = relationship(

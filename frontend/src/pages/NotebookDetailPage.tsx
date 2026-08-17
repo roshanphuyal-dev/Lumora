@@ -8,6 +8,7 @@ import { ApiError } from "@/lib/api"
 import { useNotebook } from "@/hooks/use-notebook"
 import { useSourceDocuments } from "@/hooks/use-source-documents"
 import { useDetachSource } from "@/hooks/use-detach-source"
+import { useStudyActivity } from "@/hooks/use-study-activity"
 import { DeleteNotebookButton } from "@/components/notebook/DeleteNotebookButton"
 import { AskNotebookSection } from "@/components/notebook/AskNotebookSection"
 import { ResourceDialog } from "@/components/notebook/ResourceDialog"
@@ -30,6 +31,7 @@ export function NotebookDetailPage() {
   const documentQueries = useSourceDocuments(notebook?.sources ?? [])
   const { mutate: detachSource, isPending: isDetaching, variables: detachingSourceId } =
     useDetachSource(notebookId)
+  const { recordSectionView } = useStudyActivity(notebookId, Boolean(notebook))
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-8 px-6 py-10">
@@ -63,7 +65,7 @@ export function NotebookDetailPage() {
             <DeleteNotebookButton notebookId={notebookId} />
           </header>
 
-          <Tabs defaultValue="resources">
+          <Tabs defaultValue="resources" onValueChange={recordSectionView}>
             <TabsList className="max-w-full justify-start overflow-x-auto">
               <TabsTrigger value="resources">Resources</TabsTrigger>
               <TabsTrigger value="ask">Ask</TabsTrigger>
